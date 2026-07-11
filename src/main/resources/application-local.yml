@@ -1,0 +1,30 @@
+# ============================================================
+# VegGo Fresh — LOCAL profile
+# For developer machines running MySQL locally (e.g., via Docker Compose).
+# Override individual values in your local .env file or IDE run config.
+# This file is safe to commit (no secrets are hardcoded).
+# ============================================================
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/veggofresh_local
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver     # ← Add this line (Very Important)
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: false        # Temporarily disable while fixing connection
+
+
+logging:
+  level:
+    com.veggofresh: DEBUG
+    org.springframework.security: DEBUG
+    org.flywaydb: DEBUG

@@ -1,0 +1,20 @@
+# ============================================================
+# VegGo Fresh — DEV profile (shared development / staging server)
+# All secrets MUST be provided via environment variables.
+# Never commit real credentials here.
+# ============================================================
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    show-sql: false
+
+server:
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    com.veggofresh: DEBUG
+    org.springframework.security: INFO
