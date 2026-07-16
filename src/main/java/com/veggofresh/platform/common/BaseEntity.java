@@ -38,7 +38,7 @@ public abstract class BaseEntity {
      */
     @Id
     @UuidGenerator(style = UuidGenerator.Style.RANDOM)
-    @Column(columnDefinition = "BINARY(16)", updatable = false, nullable = false)
+    @Column(updatable = false, nullable = false)
     private UUID id;
 
     /**

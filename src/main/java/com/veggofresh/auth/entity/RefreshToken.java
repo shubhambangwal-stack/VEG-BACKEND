@@ -18,7 +18,7 @@ import java.util.UUID;
 @Where(clause = "deleted_at IS NULL")
 public class RefreshToken extends BaseEntity {
 
-    @Column(nullable = false, columnDefinition = "BINARY(16)")
+    @Column(nullable = false)
     private UUID userId;
 
     @Column(nullable = false, unique = true, length = 512)

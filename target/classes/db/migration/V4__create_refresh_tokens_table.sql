@@ -4,12 +4,12 @@
 -- ============================================================
 
 CREATE TABLE refresh_tokens (
-    id BINARY(16) NOT NULL,
+    id UUID NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     deleted_at TIMESTAMP(6) NULL,
     version BIGINT NOT NULL DEFAULT 0,
-    user_id BINARY(16) NOT NULL,
+    user_id UUID NOT NULL,
     token VARCHAR(512) NOT NULL,
     expires_at TIMESTAMP(6) NOT NULL,
     revoked BOOLEAN NOT NULL DEFAULT FALSE,

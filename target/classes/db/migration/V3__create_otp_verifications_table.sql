@@ -4,9 +4,9 @@
 -- ============================================================
 
 CREATE TABLE otp_verifications (
-    id BINARY(16) NOT NULL,
+    id UUID NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     deleted_at TIMESTAMP(6) NULL,
     version BIGINT NOT NULL DEFAULT 0,
     phone VARCHAR(20) NOT NULL,
