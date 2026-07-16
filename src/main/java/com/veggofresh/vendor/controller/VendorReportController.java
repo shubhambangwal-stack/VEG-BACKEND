@@ -1,0 +1,34 @@
+package com.veggofresh.vendor.controller;
+
+import com.veggofresh.platform.common.ApiResponse;
+import com.veggofresh.vendor.service.VendorReportService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/vendor/reports")
+@RequiredArgsConstructor
+public class VendorReportController {
+
+    private final VendorReportService vendorReportService;
+
+    private UUID getCurrentUserId() {
+        return UUID.fromString("00000000-0000-0000-0000-000000000001");
+    }
+
+    @GetMapping("/sales")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getSales() {
+        return ResponseEntity.ok(ApiResponse.success(vendorReportService.getSalesReports(getCurrentUserId()), "Sales report retrieved"));
+    }
+
+    @GetMapping("/earnings")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getEarnings() {
+        return ResponseEntity.ok(ApiResponse.success(vendorReportService.getEarningsReports(getCurrentUserId()), "Earnings report retrieved"));
+    }
+}
