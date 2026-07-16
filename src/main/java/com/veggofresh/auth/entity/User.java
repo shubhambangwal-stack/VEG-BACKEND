@@ -32,4 +32,7 @@ public class User extends BaseEntity {
 
     @Column(nullable = false)
     private boolean isBlocked = false;
+
+    @Column
+    private String password;
 }
