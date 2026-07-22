@@ -9,7 +9,7 @@ import com.veggofresh.platform.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.veggofresh.platform.security.SecurityUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,45 +31,42 @@ public class CustomerProfileController {
     private final AddressService addressService;
 
     @GetMapping("/profile")
-    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> getProfile(@AuthenticationPrincipal String userId) {
-        CustomerProfileResponseDto profile = customerProfileService.getOrCreateProfile(UUID.fromString(userId));
+    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> getProfile() {
+        CustomerProfileResponseDto profile = customerProfileService.getOrCreateProfile(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile retrieved successfully"));
     }
 
     @PutMapping("/profile")
-    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile(@AuthenticationPrincipal String userId) {
-        CustomerProfileResponseDto profile = customerProfileService.updateProfile(UUID.fromString(userId));
+    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile() {
+        CustomerProfileResponseDto profile = customerProfileService.updateProfile(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile updated successfully"));
     }
 
     @GetMapping("/addresses")
-    public ResponseEntity<ApiResponse<List<AddressResponseDto>>> getAddresses(@AuthenticationPrincipal String userId) {
-        List<AddressResponseDto> addresses = addressService.getAddresses(UUID.fromString(userId));
+    public ResponseEntity<ApiResponse<List<AddressResponseDto>>> getAddresses() {
+        List<AddressResponseDto> addresses = addressService.getAddresses(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(addresses, "Addresses retrieved successfully"));
     }
 
     @PostMapping("/addresses")
     public ResponseEntity<ApiResponse<AddressResponseDto>> addAddress(
-            @AuthenticationPrincipal String userId,
             @Valid @RequestBody AddressRequestDto request) {
-        AddressResponseDto address = addressService.addAddress(UUID.fromString(userId), request);
+        AddressResponseDto address = addressService.addAddress(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(address, "Address added successfully"));
     }
 
     @PutMapping("/addresses/{id}")
     public ResponseEntity<ApiResponse<AddressResponseDto>> updateAddress(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID id,
             @Valid @RequestBody AddressRequestDto request) {
-        AddressResponseDto address = addressService.updateAddress(UUID.fromString(userId), id, request);
+        AddressResponseDto address = addressService.updateAddress(SecurityUtils.getCurrentUserId(), id, request);
         return ResponseEntity.ok(ApiResponse.success(address, "Address updated successfully"));
     }
 
     @DeleteMapping("/addresses/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteAddress(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID id) {
-        addressService.deleteAddress(UUID.fromString(userId), id);
+        addressService.deleteAddress(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success("Address deleted successfully"));
     }
 }
