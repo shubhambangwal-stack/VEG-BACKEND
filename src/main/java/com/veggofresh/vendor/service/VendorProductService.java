@@ -91,6 +91,21 @@ public class VendorProductService {
     }
 
     @Transactional
+    public ProductDto updateProductImage(UUID ownerUserId, UUID productId, String imageUrl) {
+        Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
+
+        if (!product.getShop().getOwnerUserId().equals(ownerUserId)) {
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to modify this product");
+        }
+
+        product.setImageUrl(imageUrl);
+        product = productRepository.save(product);
+        InventoryItem inventory = inventoryItemRepository.findByProductIdAndDeletedAtIsNull(product.getId()).orElse(null);
+        return mapToDto(product, inventory);
+    }
+
+    @Transactional
     public void deleteProduct(UUID ownerUserId, UUID productId) {
         Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
                 .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
