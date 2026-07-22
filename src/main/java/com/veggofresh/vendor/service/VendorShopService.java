@@ -24,11 +24,11 @@ public class VendorShopService {
     @Transactional
     public ShopDto registerShop(ShopRegistrationRequestDto request) {
         if (shopRepository.findByOwnerUserIdAndDeletedAtIsNull(request.getOwnerUserId()).isPresent()) {
-            throw new BusinessException("Vendor already has a registered shop", "VENDOR_SHOP_EXISTS");
+            throw new BusinessException("VENDOR_SHOP_EXISTS", "Vendor already has a registered shop");
         }
         
         userLookupService.findById(request.getOwnerUserId())
-                .orElseThrow(() -> new BusinessException("User not found", "USER_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("USER_NOT_FOUND", "User not found"));
 
         Shop shop = Shop.builder()
                 .ownerUserId(request.getOwnerUserId())
@@ -47,14 +47,14 @@ public class VendorShopService {
     @Transactional(readOnly = true)
     public ShopDto getShopByOwner(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
         return mapToDto(shop);
     }
 
     @Transactional
     public ShopDto updateShop(UUID ownerUserId, ShopUpdateRequestDto request) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         shop.setName(request.getName());
         shop.setAddress(request.getAddress());
@@ -68,7 +68,7 @@ public class VendorShopService {
     public void submitKycDocuments(UUID ownerUserId) {
         // Mock KYC document submission logic
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
         
         // For demonstration, immediately move to APPROVED. Real logic might just attach documents.
         shop.setKycStatus(KycStatus.APPROVED);
@@ -78,10 +78,10 @@ public class VendorShopService {
     @Transactional
     public void setShopStatus(UUID ownerUserId, boolean isOnline) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
         
         if (isOnline && shop.getKycStatus() != KycStatus.APPROVED) {
-            throw new BusinessException("Cannot go online. KYC is not approved.", "VENDOR_KYC_NOT_APPROVED");
+            throw new BusinessException("VENDOR_KYC_NOT_APPROVED", "Cannot go online. KYC is not approved.");
         }
         
         shop.setOnline(isOnline);
