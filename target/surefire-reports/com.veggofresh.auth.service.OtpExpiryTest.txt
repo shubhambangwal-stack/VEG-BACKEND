@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.veggofresh.auth.service.OtpExpiryTest
--------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.317 s -- in com.veggofresh.auth.service.OtpExpiryTest
