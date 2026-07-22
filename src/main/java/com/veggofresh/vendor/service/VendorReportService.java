@@ -17,7 +17,7 @@ public class VendorReportService {
 
     public Map<String, Object> getSalesReports(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
         
         // Mock data. Actual implementation would query order data.
         return Map.of("shopId", shop.getId(), "totalSales", 0);
@@ -25,7 +25,7 @@ public class VendorReportService {
 
     public Map<String, Object> getEarningsReports(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
         
         // Mock data. Actual implementation would query payment data.
         return Map.of("shopId", shop.getId(), "totalEarnings", 0.0);
