@@ -1,2 +1,4 @@
 C:\Users\Pearl Organisation\IdeaProjects\VEG-BACKEND\src\test\java\com\veggofresh\auth\service\OtpExpiryTest.java
 C:\Users\Pearl Organisation\IdeaProjects\VEG-BACKEND\src\test\java\com\veggofresh\auth\service\RefreshTokenRevocationTest.java
+C:\Users\Pearl Organisation\IdeaProjects\VEG-BACKEND\src\test\java\com\veggofresh\customer\service\CartTotalCalculationTest.java
+C:\Users\Pearl Organisation\IdeaProjects\VEG-BACKEND\src\test\java\com\veggofresh\customer\service\OrderStateTransitionTest.java
