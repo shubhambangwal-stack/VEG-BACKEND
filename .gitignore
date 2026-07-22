@@ -1,0 +1,43 @@
+# Maven target directory
+target/
+*.class
+
+# Package files
+*.jar
+*.war
+*.ear
+*.rar
+
+# Logs and databases
+*.log
+logs/
+*.sqlite
+*.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+.vscode/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Agent / Tool temporary files
+.antigravity/
+.gemini/
