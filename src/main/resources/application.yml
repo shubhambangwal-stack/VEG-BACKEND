@@ -67,7 +67,7 @@ veggofresh:
     # Generate a strong Base64-encoded key (minimum 256 bits):
     #   openssl rand -base64 32
     secret: ${JWT_SECRET:dGhpc0lzQVZlcnlTdHJvbmdTZWNyZXRLZXlGb3JKV1QhMTIzNDU2Nzg5}
-    access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:900000}      # 15 minutes
+    access-token-expiry-ms: ${JWT_ACCESS_EXPIRY_MS:43200000}      # 1 day
     refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000} # 7 days
 
   # ── Firebase ──────────────────────────────────────────────
