@@ -1,5 +1,7 @@
 package com.veggofresh.customer.service;
 
+import com.veggofresh.customer.dto.response.OrderResponseDto;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -10,4 +12,5 @@ public interface CustomerOrderService {
     void acceptOrder(UUID orderId);
     void rejectOrder(UUID orderId);
     void updateOrderStatus(UUID orderId, String status);
+    List<OrderResponseDto> getOrdersByShopId(UUID shopId);
 }

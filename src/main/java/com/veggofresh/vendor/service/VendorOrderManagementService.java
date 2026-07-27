@@ -1,5 +1,6 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.entity.Shop;
@@ -8,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -17,6 +19,13 @@ public class VendorOrderManagementService {
     private final CustomerOrderService customerOrderService;
     private final VendorInventoryService vendorInventoryService;
     private final ShopRepository shopRepository;
+
+    @Transactional(readOnly = true)
+    public List<OrderResponseDto> getShopOrders(UUID ownerUserId) {
+        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
+        return customerOrderService.getOrdersByShopId(shop.getId());
+    }
 
     @Transactional
     public void acceptOrder(UUID ownerUserId, UUID orderId) {

@@ -5,7 +5,7 @@ import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.vendor.dto.ProductDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.veggofresh.platform.security.SecurityUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,24 +25,22 @@ public class CustomerWishlistController {
     private final WishlistService wishlistService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductDto>>> getWishlist(@AuthenticationPrincipal String userId) {
-        List<ProductDto> wishlist = wishlistService.getWishlist(UUID.fromString(userId));
+    public ResponseEntity<ApiResponse<List<ProductDto>>> getWishlist() {
+        List<ProductDto> wishlist = wishlistService.getWishlist(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(wishlist, "Wishlist retrieved successfully"));
     }
 
     @PostMapping
     public ResponseEntity<ApiResponse<Void>> addToWishlist(
-            @AuthenticationPrincipal String userId,
             @RequestParam UUID productId) {
-        wishlistService.addToWishlist(UUID.fromString(userId), productId);
+        wishlistService.addToWishlist(SecurityUtils.getCurrentUserId(), productId);
         return ResponseEntity.ok(ApiResponse.success("Product added to wishlist successfully"));
     }
 
     @DeleteMapping("/{productId}")
     public ResponseEntity<ApiResponse<Void>> removeFromWishlist(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID productId) {
-        wishlistService.removeFromWishlist(UUID.fromString(userId), productId);
+        wishlistService.removeFromWishlist(SecurityUtils.getCurrentUserId(), productId);
         return ResponseEntity.ok(ApiResponse.success("Product removed from wishlist successfully"));
     }
 }

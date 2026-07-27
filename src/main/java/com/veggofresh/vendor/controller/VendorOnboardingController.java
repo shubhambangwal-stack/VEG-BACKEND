@@ -41,8 +41,14 @@ public class VendorOnboardingController {
             @RequestParam("type") String type,
             @RequestParam("file") MultipartFile file) {
         
-        // Mock upload logic
-        String fileName = type + "_" + System.currentTimeMillis() + ".pdf";
+        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(SecurityUtils.getCurrentUserId())
+                .orElseThrow(() -> new BusinessException("SHOP_NOT_FOUND", "Vendor shop not found"));
+
+        String fileName = type + "_" + shop.getId() + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
+
+        shop.setKycStatus(KycStatus.PENDING);
+        shopRepository.save(shop);
+
         return ResponseEntity.ok(ApiResponse.success(Map.of("file_name", fileName), "Document uploaded successfully"));
     }
 

@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.veggofresh.platform.security.SecurityUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,43 +33,38 @@ public class CustomerOrderController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<OrderResponseDto>> checkout(
-            @AuthenticationPrincipal String userId,
             @Valid @RequestBody OrderRequestDto request) {
-        OrderResponseDto order = orderService.checkout(UUID.fromString(userId), request);
+        OrderResponseDto order = orderService.checkout(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(order, "Order placed successfully"));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<PageResponse<OrderResponseDto>>> getOrderHistory(
-            @AuthenticationPrincipal String userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        Page<OrderResponseDto> history = orderService.getOrderHistory(UUID.fromString(userId), PageRequest.of(page, size));
+        Page<OrderResponseDto> history = orderService.getOrderHistory(SecurityUtils.getCurrentUserId(), PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(history), "Order history retrieved successfully"));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<OrderResponseDto>> getOrderDetails(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID id) {
-        OrderResponseDto order = orderService.getOrderDetails(UUID.fromString(userId), id);
+        OrderResponseDto order = orderService.getOrderDetails(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(order, "Order details retrieved successfully"));
     }
 
     @GetMapping("/{id}/track")
     public ResponseEntity<ApiResponse<OrderTrackingResponseDto>> trackOrder(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID id) {
-        OrderTrackingResponseDto tracking = orderService.trackOrder(UUID.fromString(userId), id);
+        OrderTrackingResponseDto tracking = orderService.trackOrder(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(tracking, "Order tracking information retrieved successfully"));
     }
 
     @PostMapping("/{id}/rating")
     public ResponseEntity<ApiResponse<RatingResponseDto>> rateOrder(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID id,
             @Valid @RequestBody RatingRequestDto request) {
-        RatingResponseDto rating = orderService.rateOrder(UUID.fromString(userId), id, request);
+        RatingResponseDto rating = orderService.rateOrder(SecurityUtils.getCurrentUserId(), id, request);
         return ResponseEntity.ok(ApiResponse.success(rating, "Order rated successfully"));
     }
 }
