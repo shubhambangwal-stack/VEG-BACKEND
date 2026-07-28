@@ -56,12 +56,27 @@ server:
   port: ${SERVER_PORT:8080}
   servlet:
     context-path: /
+  # Required when running behind a reverse proxy (Nginx).
+  # Ensures Spring reads real IP / scheme from X-Forwarded-* headers.
+  forward-headers-strategy: FRAMEWORK
   error:
     include-message: never    # Never expose raw exception messages to clients
     include-stacktrace: never
 
 # ── VegGo Fresh Custom Properties ─────────────────────────
 veggofresh:
+  # ── CORS ──────────────────────────────────────────────────
+  cors:
+    # Comma-separated list of allowed origins.
+    # In production set:  CORS_ALLOWED_ORIGINS=http://veggofresh.in,https://veggofresh.in
+    # Postman does not send an Origin header so it bypasses CORS entirely — if
+    # you see 403 from Postman the issue is auth (missing Bearer token), not CORS.
+    allowed-origins:
+      - ${CORS_ORIGIN_1:http://localhost:3000}
+      - ${CORS_ORIGIN_2:http://localhost:5173}
+      - ${CORS_ORIGIN_3:http://localhost:8080}
+      - ${CORS_ORIGIN_4:http://veggofresh.in}
+      - ${CORS_ORIGIN_5:https://veggofresh.in}
   jwt:
     # ⚠ REQUIRED: Override JWT_SECRET in all environments.
     # Generate a strong Base64-encoded key (minimum 256 bits):
