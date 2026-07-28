@@ -28,4 +28,7 @@ public class Category extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean isActive = true;
+
+    @Column(name = "icon_url", columnDefinition = "TEXT")
+    private String iconUrl;
 }

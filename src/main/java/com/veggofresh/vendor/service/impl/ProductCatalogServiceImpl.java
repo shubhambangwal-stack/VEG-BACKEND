@@ -28,6 +28,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     private final ProductRepository productRepository;
     private final ShopRepository shopRepository;
+    private final com.veggofresh.vendor.repository.CategoryRepository categoryRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -45,8 +46,55 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.veggofresh.vendor.dto.CategoryDto> getAllCategories() {
+        return categoryRepository.findAllByDeletedAtIsNull().stream()
+                .map(category -> com.veggofresh.vendor.dto.CategoryDto.builder()
+                        .id(category.getId())
+                        .name(category.getName())
+                        .description(category.getDescription())
+                        .iconUrl(category.getIconUrl())
+                        .isActive(category.isActive())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getRelatedProducts(UUID productId) {
+        Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found"));
+        
+        // Find other active products in the same category (excluding the current one)
+        List<Product> products = productRepository.findAllByShopIdAndIsActiveTrueAndDeletedAtIsNull(product.getShop().getId());
+        return products.stream()
+                .filter(p -> p.getCategory().getId().equals(product.getCategory().getId()) && !p.getId().equals(productId))
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getDailyDeals() {
+        // Return products that have a discount percent set or are marked as best seller
+        List<Product> allProducts = productRepository.findAll();
+        return allProducts.stream()
+                .filter(p -> p.isActive() && p.getDeletedAt() == null && (p.getDiscountPercent() != null && p.getDiscountPercent() > 0))
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
     
     private ProductDto mapToDto(Product product) {
+        List<String> highlights = null;
+        if (product.getWhyItsGreat() != null) {
+            highlights = java.util.Arrays.stream(product.getWhyItsGreat().split(";"))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+        }
+
         return ProductDto.builder()
                 .id(product.getId())
                 .name(product.getName())
@@ -55,6 +103,13 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                 .shopId(product.getShop().getId())
                 .shopName(product.getShop().getName())
                 .category(product.getCategory().getName())
+                .imageUrl(product.getImageUrl())
+                .unit(product.getUnit())
+                .isBestSeller(product.isBestSeller())
+                .discountPercent(product.getDiscountPercent())
+                .badge(product.getBadge())
+                .whyItsGreat(highlights)
+                .storageTips(product.getStorageTips())
                 .build();
     }
 

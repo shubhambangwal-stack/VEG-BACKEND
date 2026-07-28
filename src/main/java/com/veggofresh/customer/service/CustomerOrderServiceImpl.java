@@ -57,6 +57,39 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public void assignDeliveryAgent(UUID orderId, String agentName, String agentPhone,
+                                     String agentPhotoUrl, String estimatedWindow) {
+        log.info("Assigning delivery agent {} to order {}", agentName, orderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new com.veggofresh.platform.exception.BusinessException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDeliveryAgentName(agentName);
+        order.setDeliveryAgentPhone(agentPhone);
+        order.setDeliveryAgentPhotoUrl(agentPhotoUrl);
+        order.setEstimatedDeliveryWindow(estimatedWindow);
+        orderRepository.save(order);
+    }
+
+    @Override
+    public void markDelivered(UUID orderId, String deliveryPhotoUrl, String locationNote) {
+        log.info("Marking order {} as delivered", orderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new com.veggofresh.platform.exception.BusinessException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDeliveryPhotoUrl(deliveryPhotoUrl);
+        order.setDeliveryLocationNote(locationNote);
+        order.setDeliveredAt(java.time.Instant.now());
+        order.setStatus(OrderStatus.DELIVERED);
+        orderRepository.save(order);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String getDeliveryOtp(UUID orderId) {
+        // Return a stable 4-digit code based on the order's UUID hash
+        int code = Math.abs(orderId.hashCode() % 9000) + 1000;
+        return String.valueOf(code);
+    }
+
     private OrderResponseDto mapToDto(Order order) {
         List<OrderItemResponseDto> itemDtos = order.getItems().stream()
                 .map(item -> {
@@ -73,14 +106,35 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
                 })
                 .collect(Collectors.toList());
 
+        List<String> itemThumbnails = order.getItems().stream()
+                .map(item -> productCatalogService.getProductById(item.getProductId()))
+                .filter(p -> p != null && p.getImageUrl() != null)
+                .map(ProductDto::getImageUrl)
+                .limit(3)
+                .collect(Collectors.toList());
+
         return OrderResponseDto.builder()
                 .id(order.getId())
                 .userId(order.getUserId())
+                .orderNumber(order.getOrderNumber())
                 .status(order.getStatus().name())
                 .totalAmount(order.getTotalAmount())
+                .deliveryFee(order.getDeliveryFee())
+                .estimatedTax(order.getEstimatedTax())
+                .promoDiscount(order.getPromoDiscount())
+                .promoCode(order.getPromoCode())
                 .deliveryAddress(order.getDeliveryAddress())
                 .latitude(order.getLatitude())
                 .longitude(order.getLongitude())
+                .scheduledDate(order.getScheduledDate() != null ? order.getScheduledDate().toString() : null)
+                .deliveryTimeSlot(order.getDeliveryTimeSlot())
+                .paymentMethod(order.getPaymentMethodId() != null ? "Credit Card" : "COD")
+                .itemCount(order.getItems().size())
+                .itemThumbnails(itemThumbnails)
+                .estimatedDeliveryWindow(order.getEstimatedDeliveryWindow())
+                .canTrack(order.getStatus() == OrderStatus.OUT_FOR_DELIVERY)
+                .canReorder(order.getStatus() == OrderStatus.DELIVERED)
+                .canCancel(order.getStatus() == OrderStatus.PLACED || order.getStatus() == OrderStatus.CONFIRMED)
                 .items(itemDtos)
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())

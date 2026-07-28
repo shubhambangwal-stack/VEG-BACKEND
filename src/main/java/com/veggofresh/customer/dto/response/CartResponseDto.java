@@ -18,4 +18,10 @@ public class CartResponseDto {
     private UUID userId;
     private List<CartItemResponseDto> items;
     private BigDecimal totalAmount;
+    private int itemCount;
+    private BigDecimal deliveryFee;
+    private BigDecimal estimatedTax;
+    /** Applied promo code (null if none) */
+    private String promoCode;
+    private BigDecimal promoDiscount;
 }
