@@ -1,0 +1,284 @@
+{
+  "info": {
+    "_postman_id": "9b90875c-897b-4029-9e0c-99d08e5e6e30",
+    "name": "VegGo Fresh - Admin Module",
+    "description": "Postman collection for VegGo Fresh Platform Admin Module. Covers Admin Auth, Dashboard, and full Customer Management (Customer Base + Moderation Center).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success && jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.collectionVariables.set('admin_token', jsonData.data.accessToken);",
+                  "    pm.collectionVariables.set('admin_refresh_token', jsonData.data.refreshToken);",
+                  "    console.log('Admin token saved to collection variables');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@veg.go\",\n  \"password\": \"#vegGo123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/admin/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "admin", "login"]
+            },
+            "description": "Admin login. Credentials seeded via migration V7. Auto-saves token to 'admin_token'."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "dashboard"]
+            },
+            "description": "Returns total users, total customers, system status."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Management",
+      "description": "Full Customer Management section from the admin panel — View Customers (Customer Base) and Block/Unblock Accounts (Moderation Center).",
+      "item": [
+        {
+          "name": "View Customers",
+          "description": "Endpoints for the 'View Customers' sub-menu — Customer Base page.",
+          "item": [
+            {
+              "name": "Get Customer Base Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/stats",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", "stats"]
+                },
+                "description": "Returns 4 header cards: Total Customers, Active This Month, Premium Subscribers, Suspended Accounts."
+              }
+            },
+            {
+              "name": "Get Customer Ledger (all)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers?page=0&size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "Registered Customer Ledger — paginated. Columns: Customer ID, Profile Details, Completed Purchases, Lifetime Outlay, Registration Date, Account State."
+              }
+            },
+            {
+              "name": "Search Customer Ledger",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers?search=alexander&page=0&size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers"],
+                  "query": [
+                    { "key": "search", "value": "alexander" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "Search the Registered Customer Ledger by ID, name, or email."
+              }
+            },
+            {
+              "name": "Get Customer Detail (View icon)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/:userId",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", ":userId"],
+                  "variable": [
+                    { "key": "userId", "value": "{{customer_user_id}}", "description": "UUID of the customer" }
+                  ]
+                },
+                "description": "View a single customer's full profile — triggered by the eye icon in the ledger."
+              }
+            },
+            {
+              "name": "Delete Customer (Trash icon)",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/:userId",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", ":userId"],
+                  "variable": [
+                    { "key": "userId", "value": "{{customer_user_id}}", "description": "UUID of the customer to delete" }
+                  ]
+                },
+                "description": "Soft-deletes a customer account — triggered by the delete (trash) icon in the ledger."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Block / Unblock Accounts",
+          "description": "Endpoints for the 'Block / Unblock Accounts' sub-menu — Moderation Center page.",
+          "item": [
+            {
+              "name": "Get Moderation Center Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/moderation/stats",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", "moderation", "stats"]
+                },
+                "description": "Returns 3 header cards: Unrestricted Users, Suspended/Blocked, Flagged Warnings."
+              }
+            },
+            {
+              "name": "Get User Moderation Ledger (all)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/moderation?page=0&size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", "moderation"],
+                  "query": [
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "User Moderation Ledger — columns: Customer Details, Account ID, Flags Raised, Primary Infraction, Account State, Moderation Actions."
+              }
+            },
+            {
+              "name": "Search Moderation Ledger",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/moderation?search=charlie&page=0&size=20",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", "moderation"],
+                  "query": [
+                    { "key": "search", "value": "charlie" },
+                    { "key": "page", "value": "0" },
+                    { "key": "size", "value": "20" }
+                  ]
+                },
+                "description": "Search moderation ledger by name, email."
+              }
+            },
+            {
+              "name": "Block Customer Account",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/:userId/block",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", ":userId", "block"],
+                  "variable": [
+                    { "key": "userId", "value": "{{customer_user_id}}", "description": "UUID of the customer to block" }
+                  ]
+                },
+                "description": "Blocks a customer account — 'Block Account' button in the Moderation Ledger."
+              }
+            },
+            {
+              "name": "Unblock / Restore Customer Access",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/customers/:userId/unblock",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "customers", ":userId", "unblock"],
+                  "variable": [
+                    { "key": "userId", "value": "{{customer_user_id}}", "description": "UUID of the customer to restore" }
+                  ]
+                },
+                "description": "Restores customer access — 'Restore Access' button in the Moderation Ledger."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": { "type": "text/javascript", "exec": [""] }
+    },
+    {
+      "listen": "test",
+      "script": { "type": "text/javascript", "exec": [""] }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "admin_refresh_token", "value": "", "type": "string" },
+    { "key": "customer_user_id", "value": "", "type": "string", "description": "Set this to a real customer UUID after login" }
+  ]
+}
