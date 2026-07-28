@@ -15,8 +15,11 @@ import java.util.UUID;
 public class CustomerProfileResponseDto {
     private UUID id;
     private UUID userId;
+    private String fullName;
+    private String avatarUrl;
     private String phone;
     private String email;
+    private int memberSinceYear;   // derived from createdAt.atZone(UTC).getYear()
     private Instant createdAt;
     private Instant updatedAt;
 }

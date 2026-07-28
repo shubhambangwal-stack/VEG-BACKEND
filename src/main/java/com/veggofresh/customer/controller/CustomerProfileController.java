@@ -1,15 +1,17 @@
 package com.veggofresh.customer.controller;
 
 import com.veggofresh.customer.dto.request.AddressRequestDto;
+import com.veggofresh.customer.dto.request.CustomerProfileUpdateRequestDto;
 import com.veggofresh.customer.dto.response.AddressResponseDto;
 import com.veggofresh.customer.dto.response.CustomerProfileResponseDto;
+import com.veggofresh.customer.dto.response.CustomerProfileSummaryDto;
 import com.veggofresh.customer.service.AddressService;
 import com.veggofresh.customer.service.CustomerProfileService;
 import com.veggofresh.platform.common.ApiResponse;
+import com.veggofresh.platform.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import com.veggofresh.platform.security.SecurityUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,6 +24,20 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Customer Profile & Address Management
+ *
+ * <pre>
+ * GET  /api/customer/profile          — fetch (or auto-create) profile
+ * PUT  /api/customer/profile          — update fullName and/or avatarUrl (PATCH semantics)
+ * GET  /api/customer/profile/summary  — aggregated stats card
+ *
+ * GET    /api/customer/addresses      — list addresses
+ * POST   /api/customer/addresses      — add address
+ * PUT    /api/customer/addresses/{id} — update address
+ * DELETE /api/customer/addresses/{id} — soft-delete address
+ * </pre>
+ */
 @RestController
 @RequestMapping("/api/customer")
 @RequiredArgsConstructor
@@ -30,17 +46,59 @@ public class CustomerProfileController {
     private final CustomerProfileService customerProfileService;
     private final AddressService addressService;
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // PROFILE
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/customer/profile
+     * Returns the current customer's profile. If no profile row exists yet it is
+     * auto-created (idempotent — safe to call on every app launch).
+     */
     @GetMapping("/profile")
     public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> getProfile() {
-        CustomerProfileResponseDto profile = customerProfileService.getOrCreateProfile(SecurityUtils.getCurrentUserId());
+        CustomerProfileResponseDto profile =
+                customerProfileService.getOrCreateProfile(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile retrieved successfully"));
     }
 
+    /**
+     * PUT /api/customer/profile
+     * Updates the customer's profile. Supports partial updates (PATCH semantics):
+     * - Send only the fields you want to change.
+     * - Omitted / null fields are left untouched.
+     *
+     * Body (JSON):
+     * <pre>
+     * {
+     *   "fullName":  "John Doe",            // optional
+     *   "avatarUrl": "https://cdn.../x.png" // optional — direct URL after cloud upload
+     * }
+     * </pre>
+     */
     @PutMapping("/profile")
-    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile() {
-        CustomerProfileResponseDto profile = customerProfileService.updateProfile(SecurityUtils.getCurrentUserId());
+    public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile(
+            @Valid @RequestBody CustomerProfileUpdateRequestDto request) {
+        CustomerProfileResponseDto profile =
+                customerProfileService.updateProfile(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile updated successfully"));
     }
+
+    /**
+     * GET /api/customer/profile/summary
+     * Returns a compact summary card including order count, favorites count,
+     * address count, and member-since year — useful for home screen dashboards.
+     */
+    @GetMapping("/profile/summary")
+    public ResponseEntity<ApiResponse<CustomerProfileSummaryDto>> getProfileSummary() {
+        CustomerProfileSummaryDto summary =
+                customerProfileService.getProfileSummary(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(summary, "Customer profile summary retrieved successfully"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADDRESSES
+    // ─────────────────────────────────────────────────────────────────────────
 
     @GetMapping("/addresses")
     public ResponseEntity<ApiResponse<List<AddressResponseDto>>> getAddresses() {
@@ -64,8 +122,7 @@ public class CustomerProfileController {
     }
 
     @DeleteMapping("/addresses/{id}")
-    public ResponseEntity<ApiResponse<Void>> deleteAddress(
-            @PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<Void>> deleteAddress(@PathVariable UUID id) {
         addressService.deleteAddress(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success("Address deleted successfully"));
     }

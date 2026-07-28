@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -32,6 +33,45 @@ public class WishlistServiceImpl implements WishlistService {
                 .map(item -> productCatalogService.getProductById(item.getProductId()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getWishlistByCategory(UUID userId, String category) {
+        List<ProductDto> wishlist = getWishlist(userId);
+        if (category == null || category.trim().isEmpty()) {
+            return wishlist;
+        }
+        return wishlist.stream()
+                .filter(p -> p.getCategory() != null && p.getCategory().equalsIgnoreCase(category.trim()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getWishlistRecommendations(UUID userId) {
+        List<ProductDto> wishlist = getWishlist(userId);
+        if (wishlist.isEmpty()) {
+            return productCatalogService.getDailyDeals();
+        }
+
+        // Return related products matching categories from wishlist items
+        List<ProductDto> recommendations = new ArrayList<>();
+        for (ProductDto p : wishlist) {
+            try {
+                List<ProductDto> related = productCatalogService.getRelatedProducts(p.getId());
+                if (related != null) {
+                    for (ProductDto r : related) {
+                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(r.getId()))) {
+                            recommendations.add(r);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore errors
+            }
+        }
+        return recommendations.stream().limit(6).collect(Collectors.toList());
     }
 
     @Override
