@@ -47,11 +47,16 @@ public class DeliveryTestController {
     @PostMapping("/dispatch")
     public ResponseEntity<ApiResponse<Void>> dispatch(
             @RequestParam UUID orderId,
+            @RequestParam(required = false) UUID customerUserId,
+            @RequestParam(required = false) UUID shopOwnerUserId,
+            @RequestParam(required = false, defaultValue = "Test Shop") String shopName,
+            @RequestParam(required = false, defaultValue = "Test Shop Address") String shopAddress,
             @RequestParam double pickupLat,
             @RequestParam double pickupLng,
             @RequestParam double dropLat,
             @RequestParam double dropLng) {
-        deliveryDispatchService.dispatchOrder(orderId, pickupLat, pickupLng, dropLat, dropLng);
+        deliveryDispatchService.dispatchOrder(orderId, customerUserId, shopOwnerUserId, shopName, shopAddress,
+                pickupLat, pickupLng, dropLat, dropLng);
         return ResponseEntity.ok(ApiResponse.success("[TEST-ONLY] Assignment dispatched for order " + orderId));
     }
 }

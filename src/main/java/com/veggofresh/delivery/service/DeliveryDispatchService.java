@@ -8,13 +8,19 @@ import java.util.UUID;
  * assignment. They must never insert DeliveryAssignment rows directly.
  *
  * Intended caller: Customer module (or Vendor module, on order acceptance) should invoke
- * dispatchOrder(...) once an order transitions to CONFIRMED, passing the shop's pickup
- * coordinates and the customer's delivery-address coordinates.
+ * dispatchOrder(...) once an order transitions to CONFIRMED.
+ *
+ * PHASE B CHANGE: now also takes customerUserId, shopOwnerUserId, shopName, shopAddress.
+ * customerUserId/shopOwnerUserId let Delivery resolve live phone numbers via
+ * UserLookupService. shopName/shopAddress are a SNAPSHOT taken at dispatch time — Vendor
+ * module has no ShopLookupService yet to resolve this live. See NOTES.md. Whoever wires
+ * the real trigger should pass Shop.ownerUserId, Shop.name, Shop.address, and the
+ * customer's userId (Order.userId) directly — no new lookups required on the caller's side.
  *
  * NOTE for integration: this currently isn't wired to any real trigger — Customer's
- * OrderServiceImpl.updateOrderStatus() does not yet call this. That wiring belongs in
- * whichever module owns the CONFIRMED transition. See NOTES.md.
+ * OrderServiceImpl.updateOrderStatus() does not yet call this.
  */
 public interface DeliveryDispatchService {
-    void dispatchOrder(UUID orderId, double pickupLat, double pickupLng, double dropLat, double dropLng);
+    void dispatchOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName, String shopAddress,
+                        double pickupLat, double pickupLng, double dropLat, double dropLng);
 }

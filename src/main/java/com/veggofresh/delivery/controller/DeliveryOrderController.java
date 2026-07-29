@@ -4,9 +4,12 @@ import com.veggofresh.delivery.dto.request.OtpVerifyRequestDto;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
 import com.veggofresh.platform.common.ApiResponse;
+import com.veggofresh.platform.common.PageResponse;
 import com.veggofresh.platform.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +32,22 @@ public class DeliveryOrderController {
 
     private final DeliveryAssignmentService deliveryAssignmentService;
 
+    @GetMapping
+    public ResponseEntity<ApiResponse<PageResponse<DeliveryAssignmentResponseDto>>> getMyOrders(
+            @RequestParam(required = false, defaultValue = "active") String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        Page<DeliveryAssignmentResponseDto> orders = deliveryAssignmentService
+                .getMyOrders(SecurityUtils.getCurrentUserId(), status, PageRequest.of(page, size));
+        return ResponseEntity.ok(ApiResponse.success(PageResponse.of(orders), "Orders retrieved successfully"));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> getOrderDetail(@PathVariable UUID id) {
+        var detail = deliveryAssignmentService.getAssignmentDetail(SecurityUtils.getCurrentUserId(), id);
+        return ResponseEntity.ok(ApiResponse.success(detail, "Order detail retrieved successfully"));
+    }
+
     @GetMapping("/nearby")
     public ResponseEntity<ApiResponse<List<DeliveryAssignmentResponseDto>>> getNearbyOrders(
             @RequestParam double lat,
@@ -50,10 +69,22 @@ public class DeliveryOrderController {
         return ResponseEntity.ok(ApiResponse.success(assignment, "Assignment rejected"));
     }
 
+    @PutMapping("/{id}/arrived-at-store")
+    public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> arrivedAtStore(@PathVariable UUID id) {
+        var assignment = deliveryAssignmentService.markArrivedAtStore(SecurityUtils.getCurrentUserId(), id);
+        return ResponseEntity.ok(ApiResponse.success(assignment, "Marked as waiting at store"));
+    }
+
     @PutMapping("/{id}/pickup")
     public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> pickup(@PathVariable UUID id) {
         var assignment = deliveryAssignmentService.markPickedUp(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(assignment, "Order marked as picked up"));
+    }
+
+    @PutMapping("/{id}/arrived-at-drop")
+    public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> arrivedAtDrop(@PathVariable UUID id) {
+        var assignment = deliveryAssignmentService.markArrivedAtDrop(SecurityUtils.getCurrentUserId(), id);
+        return ResponseEntity.ok(ApiResponse.success(assignment, "Marked as arrived at drop-off"));
     }
 
     @PostMapping("/{id}/verify-otp")

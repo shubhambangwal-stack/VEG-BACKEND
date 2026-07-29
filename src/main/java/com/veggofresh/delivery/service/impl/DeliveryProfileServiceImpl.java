@@ -2,8 +2,10 @@ package com.veggofresh.delivery.service.impl;
 
 import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
+import com.veggofresh.delivery.dto.request.AccountSettingsRequestDto;
 import com.veggofresh.delivery.dto.request.DeliveryLocationStatusRequestDto;
 import com.veggofresh.delivery.dto.request.DeliveryProfileRequestDto;
+import com.veggofresh.delivery.dto.response.AccountSettingsResponseDto;
 import com.veggofresh.delivery.dto.response.DeliveryProfileResponseDto;
 import com.veggofresh.delivery.entity.DeliveryKycStatus;
 import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
@@ -95,6 +97,56 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
 
         UserSummaryDto user = userLookupService.findById(userId).orElseThrow();
         return mapToDto(profile, user.getPhone());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AccountSettingsResponseDto getAccountSettings(UUID userId) {
+        DeliveryPartnerProfile profile = profileRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROFILE_NOT_FOUND", "Delivery partner profile not found", HttpStatus.NOT_FOUND));
+
+        UserSummaryDto user = userLookupService.findById(userId)
+                .orElseThrow(() -> new BusinessException("DELIVERY_USER_NOT_FOUND", "User not found in Auth module", HttpStatus.NOT_FOUND));
+
+        return mapToAccountSettingsDto(profile, user.getPhone());
+    }
+
+    @Override
+    public AccountSettingsResponseDto updateAccountSettings(UUID userId, AccountSettingsRequestDto request) {
+        DeliveryPartnerProfile profile = profileRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROFILE_NOT_FOUND", "Delivery partner profile not found", HttpStatus.NOT_FOUND));
+
+        if (request.getFullName() != null) profile.setFullName(request.getFullName());
+        if (request.getEmail() != null) profile.setEmail(request.getEmail());
+        if (request.getVehicleType() != null) profile.setVehicleType(request.getVehicleType());
+        if (request.getVehicleColor() != null) profile.setVehicleColor(request.getVehicleColor());
+        if (request.getPushNotificationsEnabled() != null) profile.setPushNotificationsEnabled(request.getPushNotificationsEnabled());
+        if (request.getSmsAlertsEnabled() != null) profile.setSmsAlertsEnabled(request.getSmsAlertsEnabled());
+        if (request.getEmailNewslettersEnabled() != null) profile.setEmailNewslettersEnabled(request.getEmailNewslettersEnabled());
+        if (request.getEmergencyContactName() != null) profile.setEmergencyContactName(request.getEmergencyContactName());
+        if (request.getEmergencyContactRelationship() != null) profile.setEmergencyContactRelationship(request.getEmergencyContactRelationship());
+        if (request.getEmergencyContactPhone() != null) profile.setEmergencyContactPhone(request.getEmergencyContactPhone());
+
+        profileRepository.save(profile);
+
+        UserSummaryDto user = userLookupService.findById(userId).orElseThrow();
+        return mapToAccountSettingsDto(profile, user.getPhone());
+    }
+
+    private AccountSettingsResponseDto mapToAccountSettingsDto(DeliveryPartnerProfile profile, String phone) {
+        return AccountSettingsResponseDto.builder()
+                .fullName(profile.getFullName())
+                .phone(phone)
+                .email(profile.getEmail())
+                .vehicleType(profile.getVehicleType())
+                .vehicleColor(profile.getVehicleColor())
+                .pushNotificationsEnabled(profile.isPushNotificationsEnabled())
+                .smsAlertsEnabled(profile.isSmsAlertsEnabled())
+                .emailNewslettersEnabled(profile.isEmailNewslettersEnabled())
+                .emergencyContactName(profile.getEmergencyContactName())
+                .emergencyContactRelationship(profile.getEmergencyContactRelationship())
+                .emergencyContactPhone(profile.getEmergencyContactPhone())
+                .build();
     }
 
     private DeliveryProfileResponseDto mapToDto(DeliveryPartnerProfile profile, String phone) {

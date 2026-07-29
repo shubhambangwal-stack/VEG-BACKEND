@@ -48,4 +48,21 @@ public class DeliveryAssignment extends BaseEntity {
 
     @Column(name = "expires_at")
     private Instant expiresAt;
+
+    // ── Phase B: denormalized fields for contact info ──────────────────
+    // customerUserId/shopOwnerUserId let Delivery resolve LIVE phone numbers via
+    // UserLookupService at read time (no staleness risk).
+    // shopName/shopAddress are a SNAPSHOT taken at dispatch time -- Vendor module
+    // has no ShopLookupService yet, so this can't be resolved live. See NOTES.md.
+    @Column(name = "customer_user_id")
+    private UUID customerUserId;
+
+    @Column(name = "shop_owner_user_id")
+    private UUID shopOwnerUserId;
+
+    @Column(name = "shop_name", length = 255)
+    private String shopName;
+
+    @Column(name = "shop_address", length = 500)
+    private String shopAddress;
 }
