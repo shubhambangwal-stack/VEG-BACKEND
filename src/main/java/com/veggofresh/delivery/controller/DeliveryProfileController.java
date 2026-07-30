@@ -3,7 +3,9 @@ package com.veggofresh.delivery.controller;
 import com.veggofresh.delivery.dto.request.DeliveryLocationStatusRequestDto;
 import com.veggofresh.delivery.dto.request.DeliveryProfileRequestDto;
 import com.veggofresh.delivery.dto.response.DeliveryProfileResponseDto;
+import com.veggofresh.delivery.dto.response.DeliveryProfileStatsResponseDto;
 import com.veggofresh.delivery.service.DeliveryProfileService;
+import com.veggofresh.delivery.service.DeliveryStatsService;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.security.SecurityUtils;
 import jakarta.validation.Valid;
@@ -24,11 +26,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeliveryProfileController {
 
     private final DeliveryProfileService deliveryProfileService;
+    private final DeliveryStatsService deliveryStatsService;
 
     @GetMapping("/profile")
     public ResponseEntity<ApiResponse<DeliveryProfileResponseDto>> getProfile() {
         var profile = deliveryProfileService.getOrCreateProfile(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(profile, "Profile retrieved successfully"));
+    }
+
+    @GetMapping("/profile/stats")
+    public ResponseEntity<ApiResponse<DeliveryProfileStatsResponseDto>> getProfileStats() {
+        var stats = deliveryStatsService.getStats(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(stats, "Profile stats retrieved successfully"));
     }
 
     @PostMapping("/profile")

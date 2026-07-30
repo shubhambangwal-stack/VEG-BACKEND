@@ -8,7 +8,9 @@ import com.veggofresh.delivery.dto.request.DeliveryProfileRequestDto;
 import com.veggofresh.delivery.dto.response.AccountSettingsResponseDto;
 import com.veggofresh.delivery.dto.response.DeliveryProfileResponseDto;
 import com.veggofresh.delivery.entity.DeliveryKycStatus;
+import com.veggofresh.delivery.entity.DeliveryOnlineSession;
 import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
+import com.veggofresh.delivery.repository.DeliveryOnlineSessionRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.service.DeliveryProfileService;
 import com.veggofresh.platform.exception.BusinessException;
@@ -17,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
@@ -25,6 +28,7 @@ import java.util.UUID;
 public class DeliveryProfileServiceImpl implements DeliveryProfileService {
 
     private final DeliveryPartnerProfileRepository profileRepository;
+    private final DeliveryOnlineSessionRepository sessionRepository;
     private final UserLookupService userLookupService;
 
     @Override
@@ -63,10 +67,26 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
             throw new BusinessException("DELIVERY_KYC_NOT_APPROVED", "Cannot go online until KYC is approved", HttpStatus.FORBIDDEN);
         }
 
-        profile.setOnline(Boolean.TRUE.equals(request.getOnline()));
+        boolean goingOnline = Boolean.TRUE.equals(request.getOnline());
+        boolean wasOnline = profile.isOnline();
+
+        profile.setOnline(goingOnline);
         if (request.getCurrentLatitude() != null) profile.setCurrentLatitude(request.getCurrentLatitude());
         if (request.getCurrentLongitude() != null) profile.setCurrentLongitude(request.getCurrentLongitude());
         profileRepository.save(profile);
+
+        if (goingOnline && !wasOnline) {
+            DeliveryOnlineSession session = new DeliveryOnlineSession();
+            session.setDeliveryPartnerUserId(userId);
+            session.setStartedAt(Instant.now());
+            sessionRepository.save(session);
+        } else if (!goingOnline && wasOnline) {
+            sessionRepository.findByDeliveryPartnerUserIdAndEndedAtIsNull(userId)
+                    .ifPresent(session -> {
+                        session.setEndedAt(Instant.now());
+                        sessionRepository.save(session);
+                    });
+        }
 
         UserSummaryDto user = userLookupService.findById(userId).orElseThrow();
         return mapToDto(profile, user.getPhone());

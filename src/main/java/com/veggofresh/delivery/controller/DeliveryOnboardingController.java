@@ -1,8 +1,6 @@
 package com.veggofresh.delivery.controller;
 
 import com.veggofresh.delivery.dto.request.BasicInfoRequestDto;
-import com.veggofresh.delivery.dto.request.VerificationStep1RequestDto;
-import com.veggofresh.delivery.dto.request.VerificationStep2RequestDto;
 import com.veggofresh.delivery.dto.request.VerificationStep3RequestDto;
 import com.veggofresh.delivery.dto.response.OnboardingStatusResponseDto;
 import com.veggofresh.delivery.service.DeliveryOnboardingService;
@@ -13,10 +11,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/delivery/onboarding")
@@ -38,15 +39,21 @@ public class DeliveryOnboardingController {
         return ResponseEntity.ok(ApiResponse.success(status, "Basic info saved"));
     }
 
-    @PutMapping("/verification/step-1")
-    public ResponseEntity<ApiResponse<OnboardingStatusResponseDto>> submitStep1(@Valid @RequestBody VerificationStep1RequestDto request) {
-        var status = deliveryOnboardingService.submitVerificationStep1(SecurityUtils.getCurrentUserId(), request);
+    @PostMapping("/verification/step-1")
+    public ResponseEntity<ApiResponse<OnboardingStatusResponseDto>> submitStep1(
+            @RequestParam String licenseNumber,
+            @RequestParam("photo") MultipartFile licensePhoto) {
+        var status = deliveryOnboardingService.submitVerificationStep1(SecurityUtils.getCurrentUserId(), licenseNumber, licensePhoto);
         return ResponseEntity.ok(ApiResponse.success(status, "License details saved"));
     }
 
-    @PutMapping("/verification/step-2")
-    public ResponseEntity<ApiResponse<OnboardingStatusResponseDto>> submitStep2(@Valid @RequestBody VerificationStep2RequestDto request) {
-        var status = deliveryOnboardingService.submitVerificationStep2(SecurityUtils.getCurrentUserId(), request);
+    @PostMapping("/verification/step-2")
+    public ResponseEntity<ApiResponse<OnboardingStatusResponseDto>> submitStep2(
+            @RequestParam String plateNumber,
+            @RequestParam String vehicleModel,
+            @RequestParam Integer manufactureYear,
+            @RequestParam("photo") MultipartFile insurancePhoto) {
+        var status = deliveryOnboardingService.submitVerificationStep2(SecurityUtils.getCurrentUserId(), plateNumber, vehicleModel, manufactureYear, insurancePhoto);
         return ResponseEntity.ok(ApiResponse.success(status, "Vehicle details saved"));
     }
 

@@ -2,6 +2,7 @@ package com.veggofresh.delivery.controller;
 
 import com.veggofresh.delivery.dto.request.OtpVerifyRequestDto;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
+import com.veggofresh.delivery.dto.response.ProofOfDeliveryResponseDto;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.common.PageResponse;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -85,6 +87,20 @@ public class DeliveryOrderController {
     public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> arrivedAtDrop(@PathVariable UUID id) {
         var assignment = deliveryAssignmentService.markArrivedAtDrop(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(assignment, "Marked as arrived at drop-off"));
+    }
+
+    @PostMapping("/{id}/proof-of-delivery")
+    public ResponseEntity<ApiResponse<ProofOfDeliveryResponseDto>> submitProofOfDelivery(
+            @PathVariable UUID id,
+            @RequestParam("photo") MultipartFile photo,
+            @RequestParam(defaultValue = "false") boolean deliveredToCustomerDirectly,
+            @RequestParam(defaultValue = "false") boolean leftAtFrontDoor,
+            @RequestParam(defaultValue = "false") boolean packagingIntact,
+            @RequestParam(defaultValue = "false") boolean addressVerifiedManually,
+            @RequestParam(required = false) String notes) {
+        var proof = deliveryAssignmentService.submitProofOfDelivery(SecurityUtils.getCurrentUserId(), id, photo,
+                deliveredToCustomerDirectly, leftAtFrontDoor, packagingIntact, addressVerifiedManually, notes);
+        return ResponseEntity.ok(ApiResponse.success(proof, "Proof of delivery submitted"));
     }
 
     @PostMapping("/{id}/verify-otp")
