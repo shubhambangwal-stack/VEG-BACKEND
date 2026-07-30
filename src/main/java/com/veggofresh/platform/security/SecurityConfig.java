@@ -134,21 +134,24 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // Allowed origin patterns — supports localhost ports, production domains, and subdomains
+        // Configure allowed origins / origin patterns dynamically
+        // Note: Spring Security requires setAllowedOriginPatterns when setAllowCredentials(true) is used
         if (allowedOrigins != null && !allowedOrigins.isEmpty()) {
-            config.setAllowedOrigins(allowedOrigins);
-        } else {
-            config.setAllowedOriginPatterns(List.of(
-                    "http://localhost:*",
-                    "http://127.0.0.1:*",
-                    "http://veggofresh.in",
-                    "https://veggofresh.in",
-                    "http://*.veggofresh.in",
-                    "https://*.veggofresh.in"
-            ));
+            for (String origin : allowedOrigins) {
+                if (origin != null && !origin.isBlank()) {
+                    // Split comma separated origins if passed as single env string
+                    for (String o : origin.split(",")) {
+                        String trimmed = o.trim();
+                        if (!trimmed.isEmpty()) {
+                            config.addAllowedOriginPattern(trimmed);
+                        }
+                    }
+                }
+            }
         }
-        config.addAllowedOriginPattern("http://localhost:*");
-        config.addAllowedOriginPattern("http://127.0.0.1:*");
+
+        // Allowed origin patterns for dev and live server (veggofresh.in)
+        config.addAllowedOriginPattern("*");
         config.addAllowedOriginPattern("http://veggofresh.in");
         config.addAllowedOriginPattern("https://veggofresh.in");
         config.addAllowedOriginPattern("http://*.veggofresh.in");
