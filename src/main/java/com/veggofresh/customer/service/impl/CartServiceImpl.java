@@ -1,5 +1,6 @@
 package com.veggofresh.customer.service.impl;
 
+import com.veggofresh.admin.service.CouponService;
 import com.veggofresh.customer.dto.request.CartItemRequestDto;
 import com.veggofresh.customer.dto.response.CartItemResponseDto;
 import com.veggofresh.customer.dto.response.CartResponseDto;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,6 +32,7 @@ public class CartServiceImpl implements CartService {
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductCatalogService productCatalogService;
+    private final CouponService couponService;
 
     @Override
     public CartResponseDto getOrCreateCart(UUID userId) {
@@ -73,7 +76,9 @@ public class CartServiceImpl implements CartService {
             cartItemRepository.save(newItem);
         }
 
-        return mapToDto(cartRepository.save(cart));
+        Cart saved = cartRepository.save(cart);
+        recomputePromo(saved);
+        return mapToDto(cartRepository.save(saved));
     }
 
     @Override
@@ -86,7 +91,8 @@ public class CartServiceImpl implements CartService {
         cartItemRepository.save(item);
 
         Cart cart = cartRepository.findById(cartDto.getId()).orElseThrow();
-        return mapToDto(cart);
+        recomputePromo(cart);
+        return mapToDto(cartRepository.save(cart));
     }
 
     @Override
@@ -99,7 +105,9 @@ public class CartServiceImpl implements CartService {
         cart.getItems().remove(item);
         cartItemRepository.delete(item);
 
-        return mapToDto(cartRepository.save(cart));
+        Cart saved = cartRepository.save(cart);
+        recomputePromo(saved);
+        return mapToDto(cartRepository.save(saved));
     }
 
     @Override
@@ -107,8 +115,97 @@ public class CartServiceImpl implements CartService {
         cartRepository.findByUserId(userId).ifPresent(cart -> {
             cartItemRepository.deleteAll(cart.getItems());
             cart.getItems().clear();
+            cart.setPromoCode(null);
+            cart.setPromoDiscount(null);
             cartRepository.save(cart);
         });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public int getCartCount(UUID userId) {
+        return cartRepository.findByUserId(userId)
+                .map(cart -> cart.getItems().stream().mapToInt(CartItem::getQuantity).sum())
+                .orElse(0);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getCartRecommendations(UUID userId) {
+        Cart cart = cartRepository.findByUserId(userId).orElse(null);
+        if (cart == null || cart.getItems().isEmpty()) {
+            return productCatalogService.getDailyDeals();
+        }
+
+        // Gather unique recommendations based on categories of items in the cart
+        List<ProductDto> recommendations = new ArrayList<>();
+        for (CartItem item : cart.getItems()) {
+            try {
+                List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId());
+                if (related != null) {
+                    for (ProductDto p : related) {
+                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
+                            recommendations.add(p);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore errors for individual items
+            }
+        }
+        return recommendations.stream().limit(6).collect(Collectors.toList());
+    }
+
+    @Override
+    public CartResponseDto applyPromoCode(UUID userId, String code) {
+        Cart cart = cartRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException("CART_NOT_FOUND", "Cart not found", HttpStatus.NOT_FOUND));
+
+        BigDecimal subtotal = BigDecimal.ZERO;
+        for (CartItem item : cart.getItems()) {
+            ProductDto product = productCatalogService.getProductById(item.getProductId());
+            if (product != null) {
+                subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            }
+        }
+
+        BigDecimal discount = couponService.validateCoupon(code, subtotal);
+        if (discount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("INVALID_PROMO_CODE", "The promo code is invalid or does not meet criteria", HttpStatus.BAD_REQUEST);
+        }
+
+        cart.setPromoCode(code);
+        cart.setPromoDiscount(discount);
+        return mapToDto(cartRepository.save(cart));
+    }
+
+    @Override
+    public CartResponseDto removePromoCode(UUID userId) {
+        Cart cart = cartRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException("CART_NOT_FOUND", "Cart not found", HttpStatus.NOT_FOUND));
+
+        cart.setPromoCode(null);
+        cart.setPromoDiscount(null);
+        return mapToDto(cartRepository.save(cart));
+    }
+
+    private void recomputePromo(Cart cart) {
+        if (cart.getPromoCode() != null) {
+            BigDecimal subtotal = BigDecimal.ZERO;
+            for (CartItem item : cart.getItems()) {
+                ProductDto product = productCatalogService.getProductById(item.getProductId());
+                if (product != null) {
+                    subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                }
+            }
+            BigDecimal discount = couponService.validateCoupon(cart.getPromoCode(), subtotal);
+            if (discount.compareTo(BigDecimal.ZERO) <= 0) {
+                cart.setPromoCode(null);
+                cart.setPromoDiscount(null);
+            } else {
+                cart.setPromoDiscount(discount);
+            }
+        }
     }
 
     private CartResponseDto mapToDto(Cart cart) {
@@ -128,15 +225,27 @@ public class CartServiceImpl implements CartService {
                         .unitPrice(product.getPrice())
                         .quantity(item.getQuantity())
                         .subTotal(subTotal)
+                        .productImageUrl(product.getImageUrl())
                         .build());
             }
         }
+
+        BigDecimal deliveryFee = BigDecimal.valueOf(5.00); // flat delivery fee
+        BigDecimal estimatedTax = total.multiply(BigDecimal.valueOf(0.05)); // 5% tax
+        BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
+        
+        int itemCount = cart.getItems().stream().mapToInt(CartItem::getQuantity).sum();
 
         return CartResponseDto.builder()
                 .id(cart.getId())
                 .userId(cart.getUserId())
                 .items(itemsList)
                 .totalAmount(total)
+                .itemCount(itemCount)
+                .deliveryFee(deliveryFee)
+                .estimatedTax(estimatedTax)
+                .promoCode(cart.getPromoCode())
+                .promoDiscount(promoDiscount)
                 .build();
     }
 }

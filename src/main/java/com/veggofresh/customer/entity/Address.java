@@ -43,4 +43,8 @@ public class Address extends BaseEntity {
 
     @Column(name = "is_default", nullable = false)
     private boolean isDefault = false;
+
+    /** Human-friendly label e.g. "Home", "Office", "Friends" */
+    @Column(length = 50)
+    private String label;
 }

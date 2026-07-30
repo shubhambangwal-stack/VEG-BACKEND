@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/veggofresh_local
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver     # ← Add this line (Very Important)
 
   jpa:

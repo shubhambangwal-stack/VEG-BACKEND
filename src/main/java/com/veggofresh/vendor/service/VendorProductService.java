@@ -32,14 +32,14 @@ public class VendorProductService {
     @Transactional
     public ProductDto addProduct(UUID ownerUserId, ProductCreateRequestDto request) {
         Shop shop = shopRepository.findByIdAndDeletedAtIsNull(request.getShopId())
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         if (!shop.getOwnerUserId().equals(ownerUserId)) {
-            throw new BusinessException("Unauthorized to add product to this shop", "VENDOR_UNAUTHORIZED");
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to add product to this shop");
         }
 
         Category category = categoryRepository.findByIdAndDeletedAtIsNull(request.getCategoryId())
-                .orElseThrow(() -> new BusinessException("Category not found", "VENDOR_CATEGORY_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_CATEGORY_NOT_FOUND", "Category not found"));
 
         Product product = Product.builder()
                 .shop(shop)
@@ -67,14 +67,14 @@ public class VendorProductService {
     @Transactional
     public ProductDto updateProduct(UUID ownerUserId, UUID productId, ProductUpdateRequestDto request) {
         Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
-                .orElseThrow(() -> new BusinessException("Product not found", "VENDOR_PRODUCT_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
 
         if (!product.getShop().getOwnerUserId().equals(ownerUserId)) {
-            throw new BusinessException("Unauthorized to modify this product", "VENDOR_UNAUTHORIZED");
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to modify this product");
         }
 
         Category category = categoryRepository.findByIdAndDeletedAtIsNull(request.getCategoryId())
-                .orElseThrow(() -> new BusinessException("Category not found", "VENDOR_CATEGORY_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_CATEGORY_NOT_FOUND", "Category not found"));
 
         product.setCategory(category);
         product.setName(request.getName());
@@ -91,12 +91,27 @@ public class VendorProductService {
     }
 
     @Transactional
-    public void deleteProduct(UUID ownerUserId, UUID productId) {
+    public ProductDto updateProductImage(UUID ownerUserId, UUID productId, String imageUrl) {
         Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
-                .orElseThrow(() -> new BusinessException("Product not found", "VENDOR_PRODUCT_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
 
         if (!product.getShop().getOwnerUserId().equals(ownerUserId)) {
-            throw new BusinessException("Unauthorized to delete this product", "VENDOR_UNAUTHORIZED");
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to modify this product");
+        }
+
+        product.setImageUrl(imageUrl);
+        product = productRepository.save(product);
+        InventoryItem inventory = inventoryItemRepository.findByProductIdAndDeletedAtIsNull(product.getId()).orElse(null);
+        return mapToDto(product, inventory);
+    }
+
+    @Transactional
+    public void deleteProduct(UUID ownerUserId, UUID productId) {
+        Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
+                .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
+
+        if (!product.getShop().getOwnerUserId().equals(ownerUserId)) {
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to delete this product");
         }
 
         product.softDelete();
@@ -112,7 +127,7 @@ public class VendorProductService {
     @Transactional(readOnly = true)
     public List<ProductDto> getProductsByShop(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         return productRepository.findAllByShopIdAndDeletedAtIsNull(shop.getId()).stream()
                 .map(product -> {

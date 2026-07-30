@@ -2,10 +2,10 @@ package com.veggofresh.customer.controller;
 
 import com.veggofresh.customer.service.WishlistService;
 import com.veggofresh.platform.common.ApiResponse;
+import com.veggofresh.platform.security.SecurityUtils;
 import com.veggofresh.vendor.dto.ProductDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,24 +25,34 @@ public class CustomerWishlistController {
     private final WishlistService wishlistService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductDto>>> getWishlist(@AuthenticationPrincipal String userId) {
-        List<ProductDto> wishlist = wishlistService.getWishlist(UUID.fromString(userId));
+    public ResponseEntity<ApiResponse<List<ProductDto>>> getWishlist(
+            @RequestParam(required = false) String category) {
+        List<ProductDto> wishlist;
+        if (category != null && !category.trim().isEmpty()) {
+            wishlist = wishlistService.getWishlistByCategory(SecurityUtils.getCurrentUserId(), category);
+        } else {
+            wishlist = wishlistService.getWishlist(SecurityUtils.getCurrentUserId());
+        }
         return ResponseEntity.ok(ApiResponse.success(wishlist, "Wishlist retrieved successfully"));
     }
 
     @PostMapping
     public ResponseEntity<ApiResponse<Void>> addToWishlist(
-            @AuthenticationPrincipal String userId,
             @RequestParam UUID productId) {
-        wishlistService.addToWishlist(UUID.fromString(userId), productId);
+        wishlistService.addToWishlist(SecurityUtils.getCurrentUserId(), productId);
         return ResponseEntity.ok(ApiResponse.success("Product added to wishlist successfully"));
     }
 
     @DeleteMapping("/{productId}")
     public ResponseEntity<ApiResponse<Void>> removeFromWishlist(
-            @AuthenticationPrincipal String userId,
             @PathVariable UUID productId) {
-        wishlistService.removeFromWishlist(UUID.fromString(userId), productId);
+        wishlistService.removeFromWishlist(SecurityUtils.getCurrentUserId(), productId);
         return ResponseEntity.ok(ApiResponse.success("Product removed from wishlist successfully"));
+    }
+
+    @GetMapping("/recommendations")
+    public ResponseEntity<ApiResponse<List<ProductDto>>> getRecommendations() {
+        List<ProductDto> products = wishlistService.getWishlistRecommendations(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(products, "Wishlist recommendations retrieved successfully"));
     }
 }

@@ -19,4 +19,6 @@ public class CartItemResponseDto {
     private BigDecimal unitPrice;
     private int quantity;
     private BigDecimal subTotal;
+    /** Product image URL from ProductCatalogService */
+    private String productImageUrl;
 }

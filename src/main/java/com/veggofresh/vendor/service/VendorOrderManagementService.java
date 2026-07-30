@@ -1,5 +1,6 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.entity.Shop;
@@ -8,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -18,10 +20,17 @@ public class VendorOrderManagementService {
     private final VendorInventoryService vendorInventoryService;
     private final ShopRepository shopRepository;
 
+    @Transactional(readOnly = true)
+    public List<OrderResponseDto> getShopOrders(UUID ownerUserId) {
+        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
+        return customerOrderService.getOrdersByShopId(shop.getId());
+    }
+
     @Transactional
     public void acceptOrder(UUID ownerUserId, UUID orderId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         // Here we ideally verify the order belongs to this shop via CustomerOrderService.
         // For now, we assume the customerOrderService checks it or we just invoke the action.
@@ -35,7 +44,7 @@ public class VendorOrderManagementService {
     @Transactional
     public void rejectOrder(UUID ownerUserId, UUID orderId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         customerOrderService.rejectOrder(orderId);
     }
@@ -43,7 +52,7 @@ public class VendorOrderManagementService {
     @Transactional
     public void updateOrderStatus(UUID ownerUserId, UUID orderId, String status) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("Shop not found", "VENDOR_SHOP_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
         customerOrderService.updateOrderStatus(orderId, status);
     }

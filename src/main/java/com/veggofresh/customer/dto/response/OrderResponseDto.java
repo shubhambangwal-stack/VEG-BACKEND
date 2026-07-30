@@ -17,11 +17,25 @@ import java.util.UUID;
 public class OrderResponseDto {
     private UUID id;
     private UUID userId;
+    private String orderNumber;        // e.g. "#VG-2940582"
     private String status;
     private BigDecimal totalAmount;
+    private BigDecimal deliveryFee;
+    private BigDecimal estimatedTax;
+    private BigDecimal promoDiscount;
+    private String promoCode;
     private String deliveryAddress;
     private double latitude;
     private double longitude;
+    private String scheduledDate;
+    private String deliveryTimeSlot;   // "09:00 - 11:00"
+    private String paymentMethod;      // display label: "Credit Card", "COD"
+    private int itemCount;             // quick badge count
+    private List<String> itemThumbnails; // first 2-3 product image URLs
+    private String estimatedDeliveryWindow; // "Today, 2:30 PM – 4:00 PM"
+    private boolean canTrack;          // status == OUT_FOR_DELIVERY
+    private boolean canReorder;        // status == DELIVERED
+    private boolean canCancel;         // status == PLACED or CONFIRMED
     private List<OrderItemResponseDto> items;
     private Instant createdAt;
     private Instant updatedAt;
