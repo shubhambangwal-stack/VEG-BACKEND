@@ -69,15 +69,6 @@ public class SecurityConfig {
     private final DeviceIdFilter deviceIdFilter;
 
     /**
-     * Comma-separated list of allowed origins for CORS.
-     * Set via the {@code CORS_ALLOWED_ORIGINS} environment variable in production.
-     * Example:
-     * {@code http://veggofresh.in,https://veggofresh.in,http://admin.veggofresh.in}
-     */
-    @Value("${veggofresh.cors.allowed-origins:http://localhost:3000,http://localhost:8080,http://localhost:5173}")
-    private List<String> allowedOrigins;
-
-    /**
      * Public URL patterns that do not require a valid JWT.
      * These are also excluded from the {@link DeviceIdFilter}.
      */
@@ -94,8 +85,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // ── CORS — must be first so Spring Security handles OPTIONS correctly ──
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // ── CORS — disabled so web server (Nginx/Apache) manages CORS ─────────
+                .cors(AbstractHttpConfigurer::disable)
 
                 // ── CSRF — disabled for stateless JWT APIs ────────────────────────────
                 .csrf(AbstractHttpConfigurer::disable)
@@ -116,65 +107,6 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
-    }
-
-    /**
-     * CORS policy:
-     * <ul>
-     * <li>Allowed origins come from {@code veggofresh.cors.allowed-origins}
-     * config.</li>
-     * <li>All standard HTTP methods are allowed.</li>
-     * <li>All headers are allowed so Authorization, Content-Type, X-Device-Id etc.
-     * pass through.</li>
-     * <li>Credentials (cookies, auth headers) are exposed.</li>
-     * <li>Preflight cache: 1 hour (3600 s) to reduce OPTIONS round-trips.</li>
-     * </ul>
-     */
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-
-        // Configure allowed origins / origin patterns dynamically
-        // Note: Spring Security requires setAllowedOriginPatterns when setAllowCredentials(true) is used
-        if (allowedOrigins != null && !allowedOrigins.isEmpty()) {
-            for (String origin : allowedOrigins) {
-                if (origin != null && !origin.isBlank()) {
-                    // Split comma separated origins if passed as single env string
-                    for (String o : origin.split(",")) {
-                        String trimmed = o.trim();
-                        if (!trimmed.isEmpty()) {
-                            config.addAllowedOriginPattern(trimmed);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Allowed origin patterns for dev and live server (veggofresh.in)
-        config.addAllowedOriginPattern("*");
-        config.addAllowedOriginPattern("http://veggofresh.in");
-        config.addAllowedOriginPattern("https://veggofresh.in");
-        config.addAllowedOriginPattern("http://*.veggofresh.in");
-        config.addAllowedOriginPattern("https://*.veggofresh.in");
-
-        // Allow all standard HTTP methods
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
-
-        // Allow all headers — covers Authorization, Content-Type, X-Device-Id, etc.
-        config.setAllowedHeaders(List.of("*"));
-
-        // Expose Authorization header to browser clients
-        config.setExposedHeaders(List.of("Authorization", "X-Device-Id"));
-
-        // Allow credentials (required for Authorization header)
-        config.setAllowCredentials(true);
-
-        // Cache preflight for 1 hour
-        config.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
     }
 
     /**
