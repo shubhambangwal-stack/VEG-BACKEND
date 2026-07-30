@@ -30,4 +30,7 @@ public class AddressRequestDto {
     private Double longitude;
 
     private Boolean isDefault = false;
+
+    /** Optional label e.g. "Home", "Office", "Friends" */
+    private String label;
 }

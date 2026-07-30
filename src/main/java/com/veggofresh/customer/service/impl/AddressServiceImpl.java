@@ -46,6 +46,7 @@ public class AddressServiceImpl implements AddressService {
         address.setLatitude(request.getLatitude());
         address.setLongitude(request.getLongitude());
         address.setDefault(request.getIsDefault() != null ? request.getIsDefault() : false);
+        address.setLabel(request.getLabel());
 
         Address saved = addressRepository.save(address);
         return mapToDto(saved);
@@ -68,6 +69,7 @@ public class AddressServiceImpl implements AddressService {
         address.setLatitude(request.getLatitude());
         address.setLongitude(request.getLongitude());
         address.setDefault(request.getIsDefault() != null ? request.getIsDefault() : false);
+        address.setLabel(request.getLabel());
 
         Address updated = addressRepository.save(address);
         return mapToDto(updated);
@@ -103,6 +105,7 @@ public class AddressServiceImpl implements AddressService {
                 .latitude(address.getLatitude())
                 .longitude(address.getLongitude())
                 .isDefault(address.isDefault())
+                .label(address.getLabel())
                 .build();
     }
 }

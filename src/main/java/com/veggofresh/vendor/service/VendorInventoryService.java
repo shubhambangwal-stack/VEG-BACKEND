@@ -23,14 +23,14 @@ public class VendorInventoryService {
     @Transactional
     public InventoryItemDto updateStock(UUID ownerUserId, UUID productId, InventoryUpdateRequestDto request) {
         Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
-                .orElseThrow(() -> new BusinessException("Product not found", "VENDOR_PRODUCT_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_PRODUCT_NOT_FOUND", "Product not found"));
 
         if (!product.getShop().getOwnerUserId().equals(ownerUserId)) {
-            throw new BusinessException("Unauthorized to modify this inventory", "VENDOR_UNAUTHORIZED");
+            throw new BusinessException("VENDOR_UNAUTHORIZED", "Unauthorized to modify this inventory");
         }
 
         InventoryItem inventory = inventoryItemRepository.findByProductIdAndDeletedAtIsNull(productId)
-                .orElseThrow(() -> new BusinessException("Inventory record not found", "VENDOR_INVENTORY_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_INVENTORY_NOT_FOUND", "Inventory record not found"));
 
         inventory.setStockQuantity(request.getStockQuantity());
         if (request.getLowStockThreshold() != null) {
@@ -44,10 +44,10 @@ public class VendorInventoryService {
     @Transactional
     public void deductStock(UUID productId, int quantity) {
         InventoryItem inventory = inventoryItemRepository.findByProductIdAndDeletedAtIsNull(productId)
-                .orElseThrow(() -> new BusinessException("Inventory record not found", "VENDOR_INVENTORY_NOT_FOUND"));
+                .orElseThrow(() -> new BusinessException("VENDOR_INVENTORY_NOT_FOUND", "Inventory record not found"));
                 
         if (inventory.getStockQuantity() < quantity) {
-            throw new BusinessException("Insufficient stock", "VENDOR_INSUFFICIENT_STOCK");
+            throw new BusinessException("VENDOR_INSUFFICIENT_STOCK", "Insufficient stock");
         }
         
         inventory.setStockQuantity(inventory.getStockQuantity() - quantity);

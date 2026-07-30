@@ -10,6 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.Where;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -26,4 +27,10 @@ public class Cart extends BaseEntity {
 
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartItem> items = new ArrayList<>();
+
+    @Column(name = "promo_code", length = 50)
+    private String promoCode;
+
+    @Column(name = "promo_discount", precision = 10, scale = 2)
+    private BigDecimal promoDiscount;
 }

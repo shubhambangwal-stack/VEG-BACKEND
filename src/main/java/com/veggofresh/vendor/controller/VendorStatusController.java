@@ -1,6 +1,7 @@
 package com.veggofresh.vendor.controller;
 
 import com.veggofresh.platform.common.ApiResponse;
+import com.veggofresh.platform.security.SecurityUtils;
 import com.veggofresh.vendor.service.VendorShopService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,14 +17,10 @@ public class VendorStatusController {
 
     private final VendorShopService vendorShopService;
 
-    private UUID getCurrentUserId() {
-        return UUID.fromString("00000000-0000-0000-0000-000000000001");
-    }
-
     @PutMapping
     public ResponseEntity<ApiResponse<Void>> setShopStatus(@RequestBody Map<String, Boolean> statusMap) {
         Boolean isOnline = statusMap.getOrDefault("isOnline", false);
-        vendorShopService.setShopStatus(getCurrentUserId(), isOnline);
+        vendorShopService.setShopStatus(SecurityUtils.getCurrentUserId(), isOnline);
         return ResponseEntity.ok(ApiResponse.success("Shop status updated successfully"));
     }
 }

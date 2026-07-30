@@ -7,6 +7,7 @@ target/
 *.war
 *.ear
 *.rar
+*.json
 
 # Logs and databases
 *.log

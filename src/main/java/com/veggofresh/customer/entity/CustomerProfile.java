@@ -19,4 +19,10 @@ public class CustomerProfile extends BaseEntity {
 
     @Column(name = "user_id", nullable = false, unique = true)
     private UUID userId;
+
+    @Column(name = "full_name", length = 100)
+    private String fullName;
+
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
+    private String avatarUrl;
 }
