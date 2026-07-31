@@ -1,6 +1,7 @@
 package com.veggofresh.delivery.controller;
 
 import com.veggofresh.delivery.dto.response.EarningsSummaryResponseDto;
+import com.veggofresh.delivery.dto.response.EarningsTrendResponseDto;
 import com.veggofresh.delivery.service.DeliveryEarningService;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.security.SecurityUtils;
@@ -23,5 +24,12 @@ public class DeliveryEarningsController {
             @RequestParam(required = false, defaultValue = "daily") String period) {
         var earnings = deliveryEarningService.getEarnings(SecurityUtils.getCurrentUserId(), period);
         return ResponseEntity.ok(ApiResponse.success(earnings, "Earnings retrieved successfully"));
+    }
+
+    @GetMapping("/api/delivery/earnings/trend")
+    public ResponseEntity<ApiResponse<EarningsTrendResponseDto>> getTrend(
+            @RequestParam(required = false, defaultValue = "7") int days) {
+        var trend = deliveryEarningService.getTrend(SecurityUtils.getCurrentUserId(), days);
+        return ResponseEntity.ok(ApiResponse.success(trend, "Earnings trend retrieved successfully"));
     }
 }

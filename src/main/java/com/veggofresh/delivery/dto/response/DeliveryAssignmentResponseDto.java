@@ -30,6 +30,7 @@ public class DeliveryAssignmentResponseDto {
     private String shopPhone;
     private String customerPhone;
     private List<TimelineEntryDto> timeline;
+    private ProofOfDeliveryResponseDto proofOfDelivery;
 
     @Getter
     @Builder

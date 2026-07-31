@@ -4,19 +4,23 @@ import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
+import com.veggofresh.delivery.dto.response.ProofOfDeliveryResponseDto;
 import com.veggofresh.delivery.entity.DeliveryAssignment;
 import com.veggofresh.delivery.entity.DeliveryAssignmentStatus;
 import com.veggofresh.delivery.entity.DeliveryAssignmentStatusHistory;
 import com.veggofresh.delivery.entity.DeliveryKycStatus;
 import com.veggofresh.delivery.entity.DeliveryOtp;
 import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
+import com.veggofresh.delivery.entity.DeliveryProofOfDelivery;
 import com.veggofresh.delivery.entity.EarningRecord;
 import com.veggofresh.delivery.repository.DeliveryAssignmentRepository;
 import com.veggofresh.delivery.repository.DeliveryAssignmentStatusHistoryRepository;
 import com.veggofresh.delivery.repository.DeliveryOtpRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
+import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
+import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +31,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,7 +52,10 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private static final double DEFAULT_SEARCH_RADIUS_KM = 5.0;
     private static final int OTP_EXPIRY_MINUTES = 15;
     private static final int MAX_OTP_ATTEMPTS = 5;
-    private static final BigDecimal FLAT_EARNING_PER_DELIVERY = BigDecimal.valueOf(40);
+    private static final BigDecimal BASE_PAY = BigDecimal.valueOf(20);
+    private static final BigDecimal RATE_PER_KM = BigDecimal.valueOf(8);
+    // peakBonus and tip are ALWAYS zero -- no surge/demand system and no
+    // tip-collection mechanism exist anywhere yet. See NOTES.md.
     private static final List<DeliveryAssignmentStatus> TERMINAL_STATUSES = List.of(
             DeliveryAssignmentStatus.DELIVERED, DeliveryAssignmentStatus.REJECTED,
             DeliveryAssignmentStatus.EXPIRED, DeliveryAssignmentStatus.CANCELLED);
@@ -56,9 +64,11 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private final DeliveryAssignmentStatusHistoryRepository historyRepository;
     private final DeliveryPartnerProfileRepository partnerRepository;
     private final DeliveryOtpRepository otpRepository;
+    private final DeliveryProofOfDeliveryRepository proofRepository;
     private final EarningRecordRepository earningRecordRepository;
     private final CustomerOrderService customerOrderService;
     private final UserLookupService userLookupService;
+    private final MockFileStorageService fileStorageService;
 
     @Override
     @Transactional(readOnly = true)
@@ -143,6 +153,41 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     @Override
+    public ProofOfDeliveryResponseDto submitProofOfDelivery(UUID deliveryPartnerUserId, UUID orderId, MultipartFile photo,
+                                                              boolean deliveredToCustomerDirectly, boolean leftAtFrontDoor,
+                                                              boolean packagingIntact, boolean addressVerifiedManually, String notes) {
+        DeliveryAssignment assignment = assignmentRepository
+                .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND", "No assignment ready for proof of delivery on this order", HttpStatus.NOT_FOUND));
+
+        if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+        }
+
+        if (photo == null || photo.isEmpty()) {
+            throw new BusinessException("DELIVERY_PROOF_PHOTO_REQUIRED", "A delivery photo is required", HttpStatus.BAD_REQUEST);
+        }
+
+        String photoUrl = fileStorageService.store(photo, "delivery-proof/" + assignment.getId());
+
+        DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
+                .orElseGet(() -> {
+                    DeliveryProofOfDelivery newProof = new DeliveryProofOfDelivery();
+                    newProof.setAssignmentId(assignment.getId());
+                    return newProof;
+                });
+        proof.setPhotoUrl(photoUrl);
+        proof.setDeliveredToCustomerDirectly(deliveredToCustomerDirectly);
+        proof.setLeftAtFrontDoor(leftAtFrontDoor);
+        proof.setPackagingIntact(packagingIntact);
+        proof.setAddressVerifiedManually(addressVerifiedManually);
+        proof.setNotes(notes);
+        proofRepository.save(proof);
+
+        return mapProofToDto(proof);
+    }
+
+    @Override
     public void verifyDeliveryOtp(UUID deliveryPartnerUserId, UUID orderId, String otp) {
         DeliveryAssignment assignment = assignmentRepository
                 .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
@@ -187,6 +232,10 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         if (!deliveryOtp.isVerified()) {
             throw new BusinessException("DELIVERY_OTP_NOT_VERIFIED", "Delivery OTP must be verified before completing delivery", HttpStatus.BAD_REQUEST);
         }
+
+        DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
+                .filter(p -> p.getPhotoUrl() != null)
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROOF_REQUIRED", "Proof of delivery (photo) must be submitted before completing delivery", HttpStatus.BAD_REQUEST));
 
         assignment.setStatus(DeliveryAssignmentStatus.DELIVERED);
         assignmentRepository.save(assignment);
@@ -362,10 +411,22 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     private void recordEarning(DeliveryAssignment assignment) {
+        double distanceKm = haversineKm(assignment.getPickupLatitude(), assignment.getPickupLongitude(),
+                assignment.getDropLatitude(), assignment.getDropLongitude());
+        BigDecimal distanceFare = RATE_PER_KM.multiply(BigDecimal.valueOf(distanceKm))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal peakBonus = BigDecimal.ZERO; // no surge/demand system exists yet
+        BigDecimal tip = BigDecimal.ZERO;       // no tip-collection mechanism exists yet
+        BigDecimal total = BASE_PAY.add(distanceFare).add(peakBonus).add(tip);
+
         EarningRecord record = new EarningRecord();
         record.setDeliveryPartnerUserId(assignment.getDeliveryPartnerUserId());
         record.setOrderId(assignment.getOrderId());
-        record.setAmount(FLAT_EARNING_PER_DELIVERY);
+        record.setBasePay(BASE_PAY);
+        record.setDistanceFare(distanceFare);
+        record.setPeakBonus(peakBonus);
+        record.setTip(tip);
+        record.setAmount(total);
         earningRecordRepository.save(record);
     }
 
@@ -393,6 +454,18 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .build();
     }
 
+    private ProofOfDeliveryResponseDto mapProofToDto(DeliveryProofOfDelivery proof) {
+        return ProofOfDeliveryResponseDto.builder()
+                .photoUrl(proof.getPhotoUrl())
+                .deliveredToCustomerDirectly(proof.isDeliveredToCustomerDirectly())
+                .leftAtFrontDoor(proof.isLeftAtFrontDoor())
+                .packagingIntact(proof.isPackagingIntact())
+                .addressVerifiedManually(proof.isAddressVerifiedManually())
+                .notes(proof.getNotes())
+                .submittedAt(proof.getUpdatedAt())
+                .build();
+    }
+
     /** Full DTO for the single-assignment detail endpoint -- resolves live phone numbers + full timeline. */
     private DeliveryAssignmentResponseDto mapToFullDto(DeliveryAssignment a) {
         String shopPhone = a.getShopOwnerUserId() != null
@@ -410,6 +483,10 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                         .build())
                 .collect(Collectors.toList());
 
+        ProofOfDeliveryResponseDto proofDto = proofRepository.findByAssignmentId(a.getId())
+                .map(this::mapProofToDto)
+                .orElse(null);
+
         return DeliveryAssignmentResponseDto.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -425,6 +502,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .shopPhone(shopPhone)
                 .customerPhone(customerPhone)
                 .timeline(timeline)
+                .proofOfDelivery(proofDto)
                 .build();
     }
 

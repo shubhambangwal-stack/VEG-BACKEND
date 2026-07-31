@@ -1,22 +1,24 @@
 package com.veggofresh.delivery.service.impl;
 
 import com.veggofresh.delivery.dto.request.BasicInfoRequestDto;
-import com.veggofresh.delivery.dto.request.VerificationStep1RequestDto;
-import com.veggofresh.delivery.dto.request.VerificationStep2RequestDto;
 import com.veggofresh.delivery.dto.request.VerificationStep3RequestDto;
 import com.veggofresh.delivery.dto.response.OnboardingNextAction;
 import com.veggofresh.delivery.dto.response.OnboardingStatusResponseDto;
+import com.veggofresh.delivery.entity.DeliveryDocument;
+import com.veggofresh.delivery.entity.DeliveryDocumentStatus;
 import com.veggofresh.delivery.entity.DeliveryDocumentType;
 import com.veggofresh.delivery.entity.DeliveryKycStatus;
 import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
 import com.veggofresh.delivery.repository.DeliveryDocumentRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.service.DeliveryOnboardingService;
+import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -27,6 +29,7 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
 
     private final DeliveryPartnerProfileRepository profileRepository;
     private final DeliveryDocumentRepository documentRepository;
+    private final MockFileStorageService fileStorageService;
 
     @Override
     @Transactional(readOnly = true)
@@ -49,12 +52,17 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
     }
 
     @Override
-    public OnboardingStatusResponseDto submitVerificationStep1(UUID userId, VerificationStep1RequestDto request) {
+    public OnboardingStatusResponseDto submitVerificationStep1(UUID userId, String licenseNumber, MultipartFile licensePhoto) {
         DeliveryPartnerProfile profile = getOrCreate(userId);
         requireBasicInfoDone(profile);
-        requireDocumentUploaded(userId, DeliveryDocumentType.LICENSE, "Upload your license photo before submitting the license number");
 
-        profile.setLicenseNumber(request.getLicenseNumber());
+        if (licensePhoto == null || licensePhoto.isEmpty()) {
+            throw new BusinessException("ONBOARDING_DOCUMENT_REQUIRED", "License photo is required", HttpStatus.BAD_REQUEST);
+        }
+
+        uploadDocument(userId, DeliveryDocumentType.LICENSE, licensePhoto);
+
+        profile.setLicenseNumber(licenseNumber);
         profile.setVerificationStep(Math.max(profile.getVerificationStep(), 1));
         profileRepository.save(profile);
 
@@ -62,14 +70,20 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
     }
 
     @Override
-    public OnboardingStatusResponseDto submitVerificationStep2(UUID userId, VerificationStep2RequestDto request) {
+    public OnboardingStatusResponseDto submitVerificationStep2(UUID userId, String plateNumber, String vehicleModel,
+                                                                 Integer manufactureYear, MultipartFile insurancePhoto) {
         DeliveryPartnerProfile profile = getOrCreate(userId);
         requireStepAtLeast(profile, 1, "Complete Step 1 (license) before Step 2");
-        requireDocumentUploaded(userId, DeliveryDocumentType.INSURANCE, "Upload your insurance document before submitting vehicle details");
 
-        profile.setPlateNumber(request.getPlateNumber());
-        profile.setVehicleModel(request.getVehicleModel());
-        profile.setManufactureYear(request.getManufactureYear());
+        if (insurancePhoto == null || insurancePhoto.isEmpty()) {
+            throw new BusinessException("ONBOARDING_DOCUMENT_REQUIRED", "Insurance document is required", HttpStatus.BAD_REQUEST);
+        }
+
+        uploadDocument(userId, DeliveryDocumentType.INSURANCE, insurancePhoto);
+
+        profile.setPlateNumber(plateNumber);
+        profile.setVehicleModel(vehicleModel);
+        profile.setManufactureYear(manufactureYear);
         profile.setVerificationStep(Math.max(profile.getVerificationStep(), 2));
         profileRepository.save(profile);
 
@@ -99,6 +113,22 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    /** Shared with the standalone document-vault endpoint's storage logic (same mock pattern). */
+    private void uploadDocument(UUID userId, DeliveryDocumentType type, MultipartFile file) {
+        String fileUrl = fileStorageService.store(file, "delivery-documents/" + userId);
+
+        DeliveryDocument doc = documentRepository.findByDeliveryPartnerUserIdAndDocumentType(userId, type)
+                .orElseGet(() -> {
+                    DeliveryDocument newDoc = new DeliveryDocument();
+                    newDoc.setDeliveryPartnerUserId(userId);
+                    newDoc.setDocumentType(type);
+                    return newDoc;
+                });
+        doc.setFileUrl(fileUrl);
+        doc.setStatus(DeliveryDocumentStatus.PENDING);
+        documentRepository.save(doc);
+    }
+
     private DeliveryPartnerProfile getOrCreate(UUID userId) {
         return profileRepository.findByUserId(userId)
                 .orElseGet(() -> {
@@ -117,15 +147,6 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
     private void requireStepAtLeast(DeliveryPartnerProfile profile, int minStep, String message) {
         if (profile.getVerificationStep() < minStep) {
             throw new BusinessException("ONBOARDING_STEP_OUT_OF_ORDER", message, HttpStatus.BAD_REQUEST);
-        }
-    }
-
-    private void requireDocumentUploaded(UUID userId, DeliveryDocumentType type, String message) {
-        boolean uploaded = documentRepository.findByDeliveryPartnerUserIdAndDocumentType(userId, type)
-                .map(doc -> doc.getFileUrl() != null)
-                .orElse(false);
-        if (!uploaded) {
-            throw new BusinessException("ONBOARDING_DOCUMENT_REQUIRED", message, HttpStatus.BAD_REQUEST);
         }
     }
 
