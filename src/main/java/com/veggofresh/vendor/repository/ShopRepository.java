@@ -1,9 +1,10 @@
 package com.veggofresh.vendor.repository;
 
-import com.veggofresh.vendor.entity.KycStatus;
-import com.veggofresh.vendor.entity.Shop;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import com.veggofresh.vendor.entity.KycStatus;
+import com.veggofresh.vendor.entity.Shop;
 
 import java.util.List;
 import java.util.Optional;

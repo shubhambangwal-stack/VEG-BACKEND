@@ -8,6 +8,7 @@ import com.veggofresh.customer.repository.CartRepository;
 import com.veggofresh.customer.service.impl.CartServiceImpl;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

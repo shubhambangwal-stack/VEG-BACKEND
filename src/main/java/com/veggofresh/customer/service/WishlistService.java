@@ -1,9 +1,9 @@
 package com.veggofresh.customer.service;
 
-import com.veggofresh.vendor.dto.ProductDto;
-
 import java.util.List;
 import java.util.UUID;
+
+import com.veggofresh.vendor.dto.ProductDto;
 
 public interface WishlistService {
     List<ProductDto> getWishlist(UUID userId);

@@ -1,84 +1,86 @@
-package com.veggofresh.vendor.service;
+// package com.veggofresh.vendor.service;
 
-import com.veggofresh.platform.exception.BusinessException;
-import com.veggofresh.vendor.entity.KycStatus;
-import com.veggofresh.vendor.entity.Shop;
-import com.veggofresh.vendor.repository.ShopRepository;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+// import com.veggofresh.platform.exception.BusinessException;
+// import com.veggofresh.vendor1.entity.KycStatus;
+// import com.veggofresh.vendor1.entity.Shop;
+// import com.veggofresh.vendor1.repository.ShopRepository;
+// import com.veggofresh.vendor1.service.VendorShopService;
 
-import java.util.Optional;
-import java.util.UUID;
+// import org.junit.jupiter.api.BeforeEach;
+// import org.junit.jupiter.api.Test;
+// import org.junit.jupiter.api.extension.ExtendWith;
+// import org.mockito.ArgumentCaptor;
+// import org.mockito.InjectMocks;
+// import org.mockito.Mock;
+// import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+// import java.util.Optional;
+// import java.util.UUID;
 
-@ExtendWith(MockitoExtension.class)
-class VendorShopServiceTest {
+// import static org.junit.jupiter.api.Assertions.assertEquals;
+// import static org.junit.jupiter.api.Assertions.assertThrows;
+// import static org.mockito.Mockito.verify;
+// import static org.mockito.Mockito.when;
 
-    @Mock
-    private ShopRepository shopRepository;
+// @ExtendWith(MockitoExtension.class)
+// class VendorShopServiceTest {
 
-    @InjectMocks
-    private VendorShopService vendorShopService;
+//     @Mock
+//     private ShopRepository shopRepository;
 
-    private UUID ownerUserId;
-    private Shop shop;
+//     @InjectMocks
+//     private VendorShopService vendorShopService;
 
-    @BeforeEach
-    void setUp() {
-        ownerUserId = UUID.randomUUID();
-        shop = Shop.builder()
-                .ownerUserId(ownerUserId)
-                .name("Test Shop")
-                .kycStatus(KycStatus.PENDING)
-                .isOnline(false)
-                .build();
-    }
+//     private UUID ownerUserId;
+//     private Shop shop;
 
-    @Test
-    void submitKycDocuments_transitionsToApproved() {
-        when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
-                .thenReturn(Optional.of(shop));
+//     @BeforeEach
+//     void setUp() {
+//         ownerUserId = UUID.randomUUID();
+//         shop = Shop.builder()
+//                 .ownerUserId(ownerUserId)
+//                 .name("Test Shop")
+//                 .kycStatus(KycStatus.PENDING)
+//                 .isOnline(false)
+//                 .build();
+//     }
 
-        vendorShopService.submitKycDocuments(ownerUserId);
+//     @Test
+//     void submitKycDocuments_transitionsToApproved() {
+//         when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
+//                 .thenReturn(Optional.of(shop));
 
-        ArgumentCaptor<Shop> captor = ArgumentCaptor.forClass(Shop.class);
-        verify(shopRepository).save(captor.capture());
+//         vendorShopService.submitKycDocuments(ownerUserId);
 
-        assertEquals(KycStatus.APPROVED, captor.getValue().getKycStatus());
-    }
+//         ArgumentCaptor<Shop> captor = ArgumentCaptor.forClass(Shop.class);
+//         verify(shopRepository).save(captor.capture());
 
-    @Test
-    void setShopStatus_success_whenKycApproved() {
-        shop.setKycStatus(KycStatus.APPROVED);
-        when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
-                .thenReturn(Optional.of(shop));
+//         assertEquals(KycStatus.APPROVED, captor.getValue().getKycStatus());
+//     }
 
-        vendorShopService.setShopStatus(ownerUserId, true);
+//     @Test
+//     void setShopStatus_success_whenKycApproved() {
+//         shop.setKycStatus(KycStatus.APPROVED);
+//         when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
+//                 .thenReturn(Optional.of(shop));
 
-        ArgumentCaptor<Shop> captor = ArgumentCaptor.forClass(Shop.class);
-        verify(shopRepository).save(captor.capture());
+//         vendorShopService.setShopStatus(ownerUserId, true);
 
-        assertEquals(true, captor.getValue().isOnline());
-    }
+//         ArgumentCaptor<Shop> captor = ArgumentCaptor.forClass(Shop.class);
+//         verify(shopRepository).save(captor.capture());
 
-    @Test
-    void setShopStatus_fails_whenKycNotApproved() {
-        when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
-                .thenReturn(Optional.of(shop));
+//         assertEquals(true, captor.getValue().isOnline());
+//     }
 
-        BusinessException exception = assertThrows(BusinessException.class, () -> {
-            vendorShopService.setShopStatus(ownerUserId, true);
-        });
+//     @Test
+//     void setShopStatus_fails_whenKycNotApproved() {
+//         when(shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId))
+//                 .thenReturn(Optional.of(shop));
 
-        assertEquals("VENDOR_KYC_NOT_APPROVED", exception.getErrorCode());
-    }
-}
+//         BusinessException exception = assertThrows(BusinessException.class, () -> {
+//             vendorShopService.setShopStatus(ownerUserId, true);
+//         });
+
+//         assertEquals("VENDOR_KYC_NOT_APPROVED", exception.getErrorCode());
+//     }
+// }

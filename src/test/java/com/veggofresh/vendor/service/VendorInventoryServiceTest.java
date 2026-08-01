@@ -4,6 +4,8 @@ import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.entity.InventoryItem;
 import com.veggofresh.vendor.entity.Product;
 import com.veggofresh.vendor.repository.InventoryItemRepository;
+import com.veggofresh.vendor.service.VendorInventoryService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

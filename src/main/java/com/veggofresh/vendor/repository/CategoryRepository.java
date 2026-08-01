@@ -1,8 +1,9 @@
 package com.veggofresh.vendor.repository;
 
-import com.veggofresh.vendor.entity.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import com.veggofresh.vendor.entity.Category;
 
 import java.util.List;
 import java.util.Optional;

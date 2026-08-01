@@ -2,10 +2,13 @@ package com.veggofresh.vendor.dto.request;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
-public class VendorRegisterRequestDto {
+/** Figma "Vendor Onboarding Step 1 of 3: Basic Info". */
+@Getter
+@Setter
+public class VendorBasicInfoRequestDto {
     @NotBlank(message = "Full name is required")
     private String fullName;
 
@@ -13,15 +16,12 @@ public class VendorRegisterRequestDto {
     private String businessName;
 
     @NotBlank(message = "Email is required")
-    @Email(message = "Invalid email format")
+    @Email(message = "Must be a valid email address")
     private String email;
 
-    @NotBlank(message = "Phone is required")
-    private String phone;
+    @NotBlank(message = "Phone number is required")
+    private String businessPhone;
 
     @NotBlank(message = "Business type is required")
     private String businessType;
-    
-    @NotBlank(message = "Password is required")
-    private String password;
 }

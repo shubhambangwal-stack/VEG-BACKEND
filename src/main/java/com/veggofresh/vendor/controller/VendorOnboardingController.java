@@ -2,79 +2,65 @@ package com.veggofresh.vendor.controller;
 
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.security.SecurityUtils;
-import com.veggofresh.vendor.dto.request.BusinessAddressRequestDto;
-import com.veggofresh.vendor.dto.response.ApplicationStatusResponseDto;
-import com.veggofresh.vendor.entity.KycStatus;
-import com.veggofresh.vendor.entity.Shop;
-import com.veggofresh.vendor.repository.ShopRepository;
-import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.dto.request.VendorBasicInfoRequestDto;
+import com.veggofresh.vendor.dto.request.VendorBusinessLocationRequestDto;
+import com.veggofresh.vendor.dto.response.VendorOnboardingChecklistResponseDto;
+import com.veggofresh.vendor.dto.response.VendorOnboardingStatusResponseDto;
+import com.veggofresh.vendor.service.VendorOnboardingService;
+
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Map;
-
+/**
+ * REPLACES the old VendorOnboardingController (BusinessAddressRequestDto /
+ * ApplicationStatusResponseDto / mapKycStatusToFlutterStatus). Delete the old file
+ * and its two now-unused DTOs when merging this in -- see NOTES_VENDOR.md.
+ */
 @RestController
-@RequestMapping("/api/vendor")
+@RequestMapping("/api/vendor/onboarding")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('VENDOR')")
 public class VendorOnboardingController {
 
-    private final ShopRepository shopRepository;
+    private final VendorOnboardingService vendorOnboardingService;
 
-    @PostMapping("/onboarding/address")
-    public ResponseEntity<ApiResponse<Void>> submitBusinessAddress(@Valid @RequestBody BusinessAddressRequestDto request) {
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(SecurityUtils.getCurrentUserId())
-                .orElseThrow(() -> new BusinessException("SHOP_NOT_FOUND", "Vendor shop not found"));
-
-        // Combine into single address string for now to match Shop entity
-        String fullAddress = request.getStreet() + ", " + request.getCity() + ", " + request.getState() + " " + request.getZipCode();
-        shop.setAddress(fullAddress);
-        shopRepository.save(shop);
-
-        return ResponseEntity.ok(ApiResponse.success("Address updated successfully"));
+    @GetMapping("/status")
+    public ResponseEntity<ApiResponse<VendorOnboardingStatusResponseDto>> getStatus() {
+        var status = vendorOnboardingService.getStatus(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(status, "Onboarding status retrieved successfully"));
     }
 
-    @PostMapping("/documents")
-    public ResponseEntity<ApiResponse<Map<String, String>>> uploadDocument(
-            @RequestParam("type") String type,
-            @RequestParam("file") MultipartFile file) {
-        
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(SecurityUtils.getCurrentUserId())
-                .orElseThrow(() -> new BusinessException("SHOP_NOT_FOUND", "Vendor shop not found"));
-
-        String fileName = type + "_" + shop.getId() + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-
-        shop.setKycStatus(KycStatus.PENDING);
-        shopRepository.save(shop);
-
-        return ResponseEntity.ok(ApiResponse.success(Map.of("file_name", fileName), "Document uploaded successfully"));
+    @PutMapping("/basic-info")
+    public ResponseEntity<ApiResponse<VendorOnboardingStatusResponseDto>> submitBasicInfo(
+            @Valid @RequestBody VendorBasicInfoRequestDto request) {
+        var status = vendorOnboardingService.submitBasicInfo(SecurityUtils.getCurrentUserId(), request);
+        return ResponseEntity.ok(ApiResponse.success(status, "Basic info saved"));
     }
 
-    @GetMapping("/application/status")
-    public ResponseEntity<ApiResponse<ApplicationStatusResponseDto>> getApplicationStatus() {
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(SecurityUtils.getCurrentUserId())
-                .orElseThrow(() -> new BusinessException("SHOP_NOT_FOUND", "Vendor shop not found"));
-
-        String status = mapKycStatusToFlutterStatus(shop.getKycStatus());
-        String declineReason = shop.getKycStatus() == KycStatus.REJECTED ? "Your provided documents did not pass verification." : null;
-
-        ApplicationStatusResponseDto response = ApplicationStatusResponseDto.builder()
-                .status(status)
-                .declineReason(declineReason)
-                .submittedAt(shop.getCreatedAt())
-                .build();
-
-        return ResponseEntity.ok(ApiResponse.success(response, "Application status retrieved"));
+    @PutMapping("/business-location")
+    public ResponseEntity<ApiResponse<VendorOnboardingStatusResponseDto>> submitBusinessLocation(
+            @Valid @RequestBody VendorBusinessLocationRequestDto request) {
+        var status = vendorOnboardingService.submitBusinessLocation(SecurityUtils.getCurrentUserId(), request);
+        return ResponseEntity.ok(ApiResponse.success(status, "Business location saved"));
     }
 
-    private String mapKycStatusToFlutterStatus(KycStatus kycStatus) {
-        if (kycStatus == null) return "underReview";
-        return switch (kycStatus) {
-            case PENDING -> "underReview";
-            case APPROVED -> "approved";
-            case REJECTED -> "declined";
-        };
+    @PostMapping("/submit")
+    public ResponseEntity<ApiResponse<VendorOnboardingStatusResponseDto>> submitApplication() {
+        var status = vendorOnboardingService.submitApplication(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(status, "Application submitted for review"));
+    }
+
+    @GetMapping("/checklist")
+    public ResponseEntity<ApiResponse<VendorOnboardingChecklistResponseDto>> getChecklist() {
+        var checklist = vendorOnboardingService.getChecklist(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(checklist, "Checklist retrieved successfully"));
     }
 }

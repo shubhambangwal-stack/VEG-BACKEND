@@ -1,10 +1,11 @@
 package com.veggofresh.vendor.service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import com.veggofresh.vendor.dto.CategoryDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;

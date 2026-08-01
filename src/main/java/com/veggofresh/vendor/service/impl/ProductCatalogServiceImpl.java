@@ -9,6 +9,7 @@ import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.service.ProductCatalogService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;

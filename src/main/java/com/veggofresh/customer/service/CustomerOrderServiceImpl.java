@@ -8,6 +8,7 @@ import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.service.OrderService;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

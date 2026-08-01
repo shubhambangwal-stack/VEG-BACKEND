@@ -6,6 +6,7 @@ import com.veggofresh.vendor.dto.CategoryDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

@@ -5,6 +5,7 @@ import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ShopRepository;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
