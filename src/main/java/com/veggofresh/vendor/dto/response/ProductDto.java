@@ -18,8 +18,7 @@ public class ProductDto {
     private BigDecimal price;
     private String imageUrl;
     private boolean isActive;
-    
-    // Inventory summary included directly on ProductDto for convenience
+
     private Integer stockQuantity;
     private boolean inStock;
 }

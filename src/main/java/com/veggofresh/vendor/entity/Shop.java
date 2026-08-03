@@ -107,4 +107,38 @@ public class Shop extends BaseEntity {
     @Column(name = "payment_settings_configured", nullable = false)
     @Builder.Default
     private boolean paymentSettingsConfigured = false;
+
+    // ── Store Profile (Figma "Store Profile Management") ───────────────
+    @Column(name = "store_image_url", columnDefinition = "TEXT")
+    private String storeImageUrl;
+
+    @Column(name = "store_bio", columnDefinition = "TEXT")
+    private String storeBio;
+
+    /** Semicolon-separated tags (e.g. "Organic;Locally Sourced;Eco-friendly"),
+     *  same lightweight pattern as Delivery/Product's whyItsGreat field --
+     *  a handful of display badges doesn't warrant a separate table. */
+    @Column(name = "store_attributes", columnDefinition = "TEXT")
+    private String storeAttributes;
+
+    // ── Account Settings (Figma "Vendor Account Settings") ──────────────
+    // profileImageUrl is the OWNER's personal photo, distinct from storeImageUrl
+    // (the storefront photo shown to customers).
+    @Column(name = "profile_image_url", columnDefinition = "TEXT")
+    private String profileImageUrl;
+
+    @Column(name = "business_license_number", length = 100)
+    private String businessLicenseNumber;
+
+    @Column(name = "new_order_alerts_enabled", nullable = false)
+    @Builder.Default
+    private boolean newOrderAlertsEnabled = true;
+
+    @Column(name = "low_stock_notifications_enabled", nullable = false)
+    @Builder.Default
+    private boolean lowStockNotificationsEnabled = true;
+
+    @Column(name = "payout_confirmations_enabled", nullable = false)
+    @Builder.Default
+    private boolean payoutConfirmationsEnabled = false;
 }

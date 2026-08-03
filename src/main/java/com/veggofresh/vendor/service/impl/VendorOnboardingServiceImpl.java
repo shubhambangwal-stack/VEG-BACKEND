@@ -13,7 +13,6 @@ import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.repository.VendorDocumentRepository;
 import com.veggofresh.vendor.service.VendorOnboardingService;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

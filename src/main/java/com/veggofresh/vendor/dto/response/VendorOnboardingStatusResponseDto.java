@@ -1,11 +1,10 @@
 package com.veggofresh.vendor.dto.response;
 
+import com.veggofresh.vendor.entity.KycStatus;
 import lombok.Builder;
 import lombok.Getter;
 
 import java.time.Instant;
-
-import com.veggofresh.vendor.entity.KycStatus;
 
 @Getter
 @Builder

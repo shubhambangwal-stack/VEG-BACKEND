@@ -6,7 +6,6 @@ import com.veggofresh.platform.security.SecurityUtils;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ShopRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

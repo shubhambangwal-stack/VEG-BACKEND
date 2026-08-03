@@ -1,12 +1,11 @@
 package com.veggofresh.vendor.dto.response;
 
+import com.veggofresh.vendor.entity.VendorDocumentStatus;
+import com.veggofresh.vendor.entity.VendorDocumentType;
 import lombok.Builder;
 import lombok.Getter;
 
 import java.time.Instant;
-
-import com.veggofresh.vendor.entity.VendorDocumentStatus;
-import com.veggofresh.vendor.entity.VendorDocumentType;
 
 @Getter
 @Builder

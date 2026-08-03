@@ -7,7 +7,6 @@ import com.veggofresh.vendor.entity.InventoryItem;
 import com.veggofresh.vendor.entity.Product;
 import com.veggofresh.vendor.repository.InventoryItemRepository;
 import com.veggofresh.vendor.repository.ProductRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,16 +40,16 @@ public class VendorInventoryService {
         inventory = inventoryItemRepository.save(inventory);
         return mapToDto(inventory);
     }
-    
+
     @Transactional
     public void deductStock(UUID productId, int quantity) {
         InventoryItem inventory = inventoryItemRepository.findByProductIdAndDeletedAtIsNull(productId)
                 .orElseThrow(() -> new BusinessException("VENDOR_INVENTORY_NOT_FOUND", "Inventory record not found"));
-                
+
         if (inventory.getStockQuantity() < quantity) {
             throw new BusinessException("VENDOR_INSUFFICIENT_STOCK", "Insufficient stock");
         }
-        
+
         inventory.setStockQuantity(inventory.getStockQuantity() - quantity);
         inventoryItemRepository.save(inventory);
     }

@@ -9,7 +9,6 @@ import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.service.ProductCatalogService;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -67,8 +66,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     public List<ProductDto> getRelatedProducts(UUID productId) {
         Product product = productRepository.findByIdAndDeletedAtIsNull(productId)
                 .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found"));
-        
-        // Find other active products in the same category (excluding the current one)
+
         List<Product> products = productRepository.findAllByShopIdAndIsActiveTrueAndDeletedAtIsNull(product.getShop().getId());
         return products.stream()
                 .filter(p -> p.getCategory().getId().equals(product.getCategory().getId()) && !p.getId().equals(productId))
@@ -79,14 +77,13 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     @Override
     @Transactional(readOnly = true)
     public List<ProductDto> getDailyDeals() {
-        // Return products that have a discount percent set or are marked as best seller
         List<Product> allProducts = productRepository.findAll();
         return allProducts.stream()
                 .filter(p -> p.isActive() && p.getDeletedAt() == null && (p.getDiscountPercent() != null && p.getDiscountPercent() > 0))
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
     }
-    
+
     private ProductDto mapToDto(Product product) {
         List<String> highlights = null;
         if (product.getWhyItsGreat() != null) {
@@ -119,7 +116,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     public List<ShopDto> browseNearbyShops(double latitude, double longitude) {
         log.info("browseNearbyShops called with lat: {}, lng: {}", latitude, longitude);
         List<Shop> shops = shopRepository.findAllByDeletedAtIsNullAndIsOnlineTrueAndKycStatus(KycStatus.APPROVED);
-        
+
         return shops.stream()
                 .filter(shop -> shop.getLatitude() != null && shop.getLongitude() != null)
                 .map(shop -> {
@@ -140,20 +137,20 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     @Transactional(readOnly = true)
     public Page<ProductDto> searchProducts(String query, String category, Double minPrice, Double maxPrice, Pageable pageable) {
         log.info("searchProducts called with query: {}, category: {}, minPrice: {}, maxPrice: {}", query, category, minPrice, maxPrice);
-        
+
         String queryParam = (query != null && !query.trim().isEmpty()) ? query.trim() : null;
         String categoryParam = (category != null && !category.trim().isEmpty()) ? category.trim() : null;
-        
+
         BigDecimal minPriceBd = minPrice != null ? BigDecimal.valueOf(minPrice) : null;
         BigDecimal maxPriceBd = maxPrice != null ? BigDecimal.valueOf(maxPrice) : null;
-        
+
         Page<Product> products = productRepository.searchActiveProducts(queryParam, categoryParam, minPriceBd, maxPriceBd, pageable);
-        
+
         return products.map(this::mapToDto);
     }
 
     private double calculateDistanceInKm(double lat1, double lon1, double lat2, double lon2) {
-        final int R = 6371; // Radius of the earth in km
+        final int R = 6371;
         double latDistance = Math.toRadians(lat2 - lat1);
         double lonDistance = Math.toRadians(lon2 - lon1);
         double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
@@ -164,4 +161,3 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
         return Math.round(distance * 10.0) / 10.0;
     }
 }
-

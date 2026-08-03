@@ -23,7 +23,6 @@ public class ProductDto {
     private String category;
     private String imageUrl;
 
-    // GAP 8 fields
     private String unit;
     private boolean isBestSeller;
     private Integer discountPercent;

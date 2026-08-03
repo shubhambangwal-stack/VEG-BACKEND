@@ -8,9 +8,8 @@ import com.veggofresh.vendor.entity.VendorDocumentStatus;
 import com.veggofresh.vendor.entity.VendorDocumentType;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.repository.VendorDocumentRepository;
-import com.veggofresh.vendor.service.VendorDocumentService;
 import com.veggofresh.vendor.service.VendorMockFileStorageService;
-
+import com.veggofresh.vendor.service.VendorDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

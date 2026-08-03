@@ -10,5 +10,5 @@ public class RecentOrderDto {
     private String itemsSummary;
     private String timeAgo;
     private Double amount;
-    private String status; // processing, ready, shipped, delivered, cancelled
+    private String status;
 }

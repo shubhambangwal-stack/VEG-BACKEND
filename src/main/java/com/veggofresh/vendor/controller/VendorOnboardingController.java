@@ -7,7 +7,6 @@ import com.veggofresh.vendor.dto.request.VendorBusinessLocationRequestDto;
 import com.veggofresh.vendor.dto.response.VendorOnboardingChecklistResponseDto;
 import com.veggofresh.vendor.dto.response.VendorOnboardingStatusResponseDto;
 import com.veggofresh.vendor.service.VendorOnboardingService;
-
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

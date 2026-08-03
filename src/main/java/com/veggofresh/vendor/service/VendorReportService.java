@@ -8,7 +8,6 @@ import com.veggofresh.vendor.entity.Product;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +18,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * NOT YET FIXED: same Customer-entity boundary violation as VendorDashboardService.
+ * Deliberately deferred past the onboarding phase. See NOTES_VENDOR.md.
+ */
 @Service
 @RequiredArgsConstructor
 public class VendorReportService {
@@ -31,9 +34,9 @@ public class VendorReportService {
     public Map<String, Object> getSalesReports(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
-        
+
         List<Order> orders = orderRepository.findByShopId(shop.getId());
-        
+
         long totalSalesCount = orders.stream()
                 .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
                 .count();
@@ -66,7 +69,7 @@ public class VendorReportService {
     public Map<String, Object> getEarningsReports(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
-        
+
         List<Order> orders = orderRepository.findByShopId(shop.getId());
 
         BigDecimal totalEarnings = orders.stream()

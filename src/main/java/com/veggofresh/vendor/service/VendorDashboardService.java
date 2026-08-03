@@ -11,7 +11,6 @@ import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.InventoryItemRepository;
 import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +24,12 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * NOT YET FIXED: still directly imports Customer's Order/OrderStatus entities and
+ * injects Customer's OrderRepository directly instead of going through
+ * CustomerOrderService -- flagged as a boundary violation in the Vendor audit,
+ * deliberately deferred past the onboarding phase. See NOTES_VENDOR.md.
+ */
 @Service
 @RequiredArgsConstructor
 public class VendorDashboardService {
@@ -49,13 +54,11 @@ public class VendorDashboardService {
 
         Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
 
-        // 1. Today's Revenue
         BigDecimal todaysRevenue = allShopOrders.stream()
                 .filter(order -> order.getCreatedAt().isAfter(startOfToday))
                 .map(order -> calculateShopRevenueForOrder(order, shop.getId()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 2. Revenue Change Percent (vs Yesterday)
         Instant startOfYesterday = startOfToday.minus(1, ChronoUnit.DAYS);
         BigDecimal yesterdaysRevenue = allShopOrders.stream()
                 .filter(order -> order.getCreatedAt().isAfter(startOfYesterday) && order.getCreatedAt().isBefore(startOfToday))
@@ -70,17 +73,14 @@ public class VendorDashboardService {
                     .doubleValue();
         }
 
-        // 3. Active Orders Count
         long activeOrdersCount = allShopOrders.stream()
                 .filter(order -> order.getStatus() != OrderStatus.DELIVERED && order.getStatus() != OrderStatus.CANCELLED)
                 .count();
 
-        // 4. Pending Pickup Count (Confirmed/Preparing)
         long pendingPickupCount = allShopOrders.stream()
                 .filter(order -> order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PREPARING)
                 .count();
 
-        // 5. Performance Trend (Last 7 Days)
         List<Integer> performanceTrend = new ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             Instant dayStart = startOfToday.minus(i, ChronoUnit.DAYS);
@@ -92,7 +92,6 @@ public class VendorDashboardService {
             performanceTrend.add(dayRevenue.intValue());
         }
 
-        // 6. Recent Orders (Top 5)
         List<RecentOrderDto> recentOrders = allShopOrders.stream()
                 .sorted((o1, o2) -> o2.getCreatedAt().compareTo(o1.getCreatedAt()))
                 .limit(5)

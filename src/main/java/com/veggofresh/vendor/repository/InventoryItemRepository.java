@@ -1,9 +1,8 @@
 package com.veggofresh.vendor.repository;
 
+import com.veggofresh.vendor.entity.InventoryItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
-
-import com.veggofresh.vendor.entity.InventoryItem;
 
 import java.util.Optional;
 import java.util.UUID;

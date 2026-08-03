@@ -5,7 +5,6 @@ import com.veggofresh.platform.security.SecurityUtils;
 import com.veggofresh.vendor.dto.request.ShopUpdateRequestDto;
 import com.veggofresh.vendor.dto.response.ShopDto;
 import com.veggofresh.vendor.service.VendorShopService;
-
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

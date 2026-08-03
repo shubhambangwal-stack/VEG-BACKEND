@@ -5,7 +5,6 @@ import com.veggofresh.platform.security.SecurityUtils;
 import com.veggofresh.vendor.dto.response.VendorDocumentResponseDto;
 import com.veggofresh.vendor.entity.VendorDocumentType;
 import com.veggofresh.vendor.service.VendorDocumentService;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;

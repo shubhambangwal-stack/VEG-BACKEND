@@ -3,27 +3,27 @@ package com.veggofresh.vendor.service;
 import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.request.ShopUpdateRequestDto;
+import com.veggofresh.vendor.dto.request.StoreProfileRequestDto;
+import com.veggofresh.vendor.dto.request.VendorAccountSettingsRequestDto;
 import com.veggofresh.vendor.dto.response.ShopDto;
+import com.veggofresh.vendor.dto.response.StoreProfileResponseDto;
+import com.veggofresh.vendor.dto.response.VendorAccountSettingsResponseDto;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ShopRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * MODIFIED: registerShop() and submitKycDocuments() removed.
- * - Shop creation: now implicit via VendorOnboardingServiceImpl.getOrCreate() on the
- *   first onboarding call, same pattern as Delivery's DeliveryPartnerProfile.
- * - KYC submission: now goes through VendorOnboardingServiceImpl.submitApplication(),
- *   which actually requires documents to be uploaded first. The old
- *   submitKycDocuments() here auto-approved KYC synchronously with zero checks --
- *   that was a real bug, not a placeholder; the auto-approve behavior now only
- *   exists in VendorTestController, clearly marked as fake. See NOTES_VENDOR.md.
+ * MODIFIED: registerShop() and submitKycDocuments() removed (see NOTES_VENDOR.md).
+ * ADDED: getStoreProfile/updateStoreProfile, getAccountSettings/updateAccountSettings.
  */
 @Service
 @RequiredArgsConstructor
@@ -34,15 +34,12 @@ public class VendorShopService {
 
     @Transactional(readOnly = true)
     public ShopDto getShopByOwner(UUID ownerUserId) {
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
-        return mapToDto(shop);
+        return mapToDto(requireShop(ownerUserId));
     }
 
     @Transactional
     public ShopDto updateShop(UUID ownerUserId, ShopUpdateRequestDto request) {
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
+        Shop shop = requireShop(ownerUserId);
 
         shop.setName(request.getName());
         shop.setAddress(request.getAddress());
@@ -54,8 +51,7 @@ public class VendorShopService {
 
     @Transactional
     public void setShopStatus(UUID ownerUserId, boolean isOnline) {
-        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
-                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
+        Shop shop = requireShop(ownerUserId);
 
         if (isOnline && shop.getKycStatus() != KycStatus.APPROVED) {
             throw new BusinessException("VENDOR_KYC_NOT_APPROVED", "Cannot go online. KYC is not approved.");
@@ -63,6 +59,92 @@ public class VendorShopService {
 
         shop.setOnline(isOnline);
         shopRepository.save(shop);
+    }
+
+    @Transactional(readOnly = true)
+    public StoreProfileResponseDto getStoreProfile(UUID ownerUserId) {
+        return mapToStoreProfileDto(requireShop(ownerUserId));
+    }
+
+    @Transactional
+    public StoreProfileResponseDto updateStoreProfile(UUID ownerUserId, StoreProfileRequestDto request) {
+        Shop shop = requireShop(ownerUserId);
+
+        shop.setName(request.getStoreName());
+        shop.setStoreBio(request.getStoreBio());
+        shop.setStoreImageUrl(request.getStoreImageUrl());
+        if (request.getAttributes() != null) {
+            shop.setStoreAttributes(String.join(";", request.getAttributes()));
+        }
+        shop.setStreetAddress(request.getStreetAddress());
+        shop.setCity(request.getCity());
+        shop.setZipCode(request.getZipCode());
+        if (request.getLatitude() != null) shop.setLatitude(request.getLatitude());
+        if (request.getLongitude() != null) shop.setLongitude(request.getLongitude());
+        // Keep legacy single-string 'address' in sync for existing callers.
+        shop.setAddress(request.getStreetAddress() + ", " + request.getCity()
+                + (shop.getState() != null ? ", " + shop.getState() : "") + " " + request.getZipCode());
+
+        return mapToStoreProfileDto(shopRepository.save(shop));
+    }
+
+    @Transactional(readOnly = true)
+    public VendorAccountSettingsResponseDto getAccountSettings(UUID ownerUserId) {
+        return mapToAccountSettingsDto(requireShop(ownerUserId));
+    }
+
+    @Transactional
+    public VendorAccountSettingsResponseDto updateAccountSettings(UUID ownerUserId, VendorAccountSettingsRequestDto request) {
+        Shop shop = requireShop(ownerUserId);
+
+        if (request.getFullName() != null) shop.setFullName(request.getFullName());
+        if (request.getEmail() != null) shop.setEmail(request.getEmail());
+        if (request.getBusinessPhone() != null) shop.setBusinessPhone(request.getBusinessPhone());
+        if (request.getBusinessLicenseNumber() != null) shop.setBusinessLicenseNumber(request.getBusinessLicenseNumber());
+        if (request.getProfileImageUrl() != null) shop.setProfileImageUrl(request.getProfileImageUrl());
+        if (request.getNewOrderAlertsEnabled() != null) shop.setNewOrderAlertsEnabled(request.getNewOrderAlertsEnabled());
+        if (request.getLowStockNotificationsEnabled() != null) shop.setLowStockNotificationsEnabled(request.getLowStockNotificationsEnabled());
+        if (request.getPayoutConfirmationsEnabled() != null) shop.setPayoutConfirmationsEnabled(request.getPayoutConfirmationsEnabled());
+
+        return mapToAccountSettingsDto(shopRepository.save(shop));
+    }
+
+    private Shop requireShop(UUID ownerUserId) {
+        return shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
+    }
+
+    private StoreProfileResponseDto mapToStoreProfileDto(Shop shop) {
+        List<String> attributes = shop.getStoreAttributes() != null
+                ? Arrays.stream(shop.getStoreAttributes().split(";")).map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList())
+                : List.of();
+
+        return StoreProfileResponseDto.builder()
+                .id(shop.getId())
+                .storeName(shop.getName())
+                .storeBio(shop.getStoreBio())
+                .storeImageUrl(shop.getStoreImageUrl())
+                .attributes(attributes)
+                .streetAddress(shop.getStreetAddress())
+                .city(shop.getCity())
+                .zipCode(shop.getZipCode())
+                .latitude(shop.getLatitude())
+                .longitude(shop.getLongitude())
+                .isOnline(shop.isOnline())
+                .build();
+    }
+
+    private VendorAccountSettingsResponseDto mapToAccountSettingsDto(Shop shop) {
+        return VendorAccountSettingsResponseDto.builder()
+                .fullName(shop.getFullName())
+                .email(shop.getEmail())
+                .businessPhone(shop.getBusinessPhone())
+                .businessLicenseNumber(shop.getBusinessLicenseNumber())
+                .profileImageUrl(shop.getProfileImageUrl())
+                .newOrderAlertsEnabled(shop.isNewOrderAlertsEnabled())
+                .lowStockNotificationsEnabled(shop.isLowStockNotificationsEnabled())
+                .payoutConfirmationsEnabled(shop.isPayoutConfirmationsEnabled())
+                .build();
     }
 
     public ShopDto mapToDto(Shop shop) {

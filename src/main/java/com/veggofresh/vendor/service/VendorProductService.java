@@ -12,7 +12,6 @@ import com.veggofresh.vendor.repository.CategoryRepository;
 import com.veggofresh.vendor.repository.InventoryItemRepository;
 import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
-
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +53,6 @@ public class VendorProductService {
 
         product = productRepository.save(product);
 
-        // Auto-create inventory for the product
         InventoryItem inventoryItem = InventoryItem.builder()
                 .product(product)
                 .stockQuantity(0)
@@ -81,7 +79,7 @@ public class VendorProductService {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
-        
+
         if (request.getIsActive() != null) {
             product.setActive(request.getIsActive());
         }
@@ -117,7 +115,7 @@ public class VendorProductService {
 
         product.softDelete();
         productRepository.save(product);
-        
+
         inventoryItemRepository.findByProductIdAndDeletedAtIsNull(productId)
             .ifPresent(inventory -> {
                 inventory.softDelete();

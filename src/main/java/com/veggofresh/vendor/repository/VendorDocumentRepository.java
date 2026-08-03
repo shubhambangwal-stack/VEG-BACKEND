@@ -1,9 +1,8 @@
 package com.veggofresh.vendor.repository;
 
-import org.springframework.data.jpa.repository.JpaRepository;
-
 import com.veggofresh.vendor.entity.VendorDocument;
 import com.veggofresh.vendor.entity.VendorDocumentType;
+import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;

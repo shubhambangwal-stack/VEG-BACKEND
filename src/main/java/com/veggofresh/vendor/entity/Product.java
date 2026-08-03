@@ -48,9 +48,8 @@ public class Product extends BaseEntity {
     @Builder.Default
     private boolean isActive = true;
 
-    // GAP 8 fields
     @Column(length = 50)
-    private String unit; // e.g. "1 kg", "500 g"
+    private String unit;
 
     @Column(name = "is_best_seller", nullable = false)
     @Builder.Default
@@ -60,7 +59,7 @@ public class Product extends BaseEntity {
     private Integer discountPercent;
 
     @Column(length = 50)
-    private String badge; // e.g. "Organic", "Fresh"
+    private String badge;
 
     @Column(name = "why_its_great", columnDefinition = "TEXT")
     private String whyItsGreat;

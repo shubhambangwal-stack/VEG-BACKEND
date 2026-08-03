@@ -1,9 +1,8 @@
 package com.veggofresh.vendor.service;
 
-import org.springframework.web.multipart.MultipartFile;
-
 import com.veggofresh.vendor.dto.response.VendorDocumentResponseDto;
 import com.veggofresh.vendor.entity.VendorDocumentType;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
