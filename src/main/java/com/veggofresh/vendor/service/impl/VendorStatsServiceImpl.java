@@ -1,0 +1,71 @@
+package com.veggofresh.vendor.service.impl;
+
+import com.veggofresh.customer.dto.response.OrderResponseDto;
+import com.veggofresh.customer.service.CustomerOrderService;
+import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.dto.response.VendorProfileStatsResponseDto;
+import com.veggofresh.vendor.entity.KycStatus;
+import com.veggofresh.vendor.entity.Shop;
+import com.veggofresh.vendor.entity.VendorShopRating;
+import com.veggofresh.vendor.repository.ProductRepository;
+import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorShopRatingRepository;
+import com.veggofresh.vendor.service.VendorStatsService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Computes totalSales via CustomerOrderService.getOrdersByShopId(...) + local item
+ * filtering by product ownership -- deliberately NOT importing Customer's Order entity
+ * directly (unlike the still-unfixed VendorDashboardService/VendorReportService), to
+ * avoid adding a third instance of that same boundary violation.
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class VendorStatsServiceImpl implements VendorStatsService {
+
+    private final ShopRepository shopRepository;
+    private final ProductRepository productRepository;
+    private final CustomerOrderService customerOrderService;
+    private final VendorShopRatingRepository ratingRepository;
+
+    @Override
+    public VendorProfileStatsResponseDto getProfileStats(UUID ownerUserId) {
+        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
+
+        BigDecimal totalSales = customerOrderService.getOrdersByShopId(shop.getId()).stream()
+                .filter(order -> "DELIVERED".equals(order.getStatus()))
+                .flatMap(order -> order.getItems().stream())
+                .filter(item -> belongsToShop(item.getProductId(), shop.getId()))
+                .map(item -> item.getSubTotal())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        long activeItemsCount = productRepository.findAllByShopIdAndIsActiveTrueAndDeletedAtIsNull(shop.getId()).size();
+
+        List<VendorShopRating> ratings = ratingRepository.findByShopId(shop.getId());
+        Double storeRating = ratings.isEmpty() ? null
+                : ratings.stream().mapToInt(VendorShopRating::getRatingValue).average().orElse(0.0);
+
+        return VendorProfileStatsResponseDto.builder()
+                .totalSales(totalSales)
+                .storeRating(storeRating != null ? Math.round(storeRating * 10.0) / 10.0 : null)
+                .ratingCount(ratings.size())
+                .activeItemsCount(activeItemsCount)
+                .isVerified(shop.getKycStatus() == KycStatus.APPROVED)
+                .build();
+    }
+
+    private boolean belongsToShop(UUID productId, UUID shopId) {
+        return productRepository.findByIdAndDeletedAtIsNull(productId)
+                .map(product -> product.getShop().getId().equals(shopId))
+                .orElse(false);
+    }
+}
