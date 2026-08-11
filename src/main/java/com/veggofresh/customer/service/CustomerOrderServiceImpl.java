@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class CustomerOrderServiceImpl implements CustomerOrderService {
+public class    CustomerOrderServiceImpl implements CustomerOrderService {
 
     private final OrderRepository orderRepository;
     private final OrderService orderService;

@@ -58,7 +58,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         refreshToken.setToken(refreshTokenStr);
         refreshToken.setExpiresAt(jwtTokenProvider.extractExpiry(refreshTokenStr));
         refreshTokenRepository.save(refreshToken);
-
+    
         return AuthTokenResponseDto.builder()
                 .accessToken(accessTokenStr)
                 .refreshToken(refreshTokenStr)
