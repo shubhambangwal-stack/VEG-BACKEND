@@ -42,15 +42,20 @@ public class CustomerBrowseController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice,
+            @RequestParam double latitude,
+            @RequestParam double longitude,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        Page<ProductDto> products = productCatalogService.searchProducts(query, category, minPrice, maxPrice, PageRequest.of(page, size));
+        Page<ProductDto> products = productCatalogService.searchProducts(query, category, minPrice, maxPrice, latitude, longitude, PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(products), "Products retrieved successfully"));
     }
 
     @GetMapping("/products/{id}")
-    public ResponseEntity<ApiResponse<ProductDto>> getProduct(@PathVariable UUID id) {
-        ProductDto product = productCatalogService.getProductById(id);
+    public ResponseEntity<ApiResponse<ProductDto>> getProduct(
+            @PathVariable UUID id,
+            @RequestParam double latitude,
+            @RequestParam double longitude) {
+        ProductDto product = productCatalogService.getProductById(id, latitude, longitude);
         return ResponseEntity.ok(ApiResponse.success(product, "Product retrieved successfully"));
     }
 
@@ -61,14 +66,19 @@ public class CustomerBrowseController {
     }
 
     @GetMapping("/products/{id}/related")
-    public ResponseEntity<ApiResponse<List<ProductDto>>> getRelatedProducts(@PathVariable UUID id) {
-        List<ProductDto> related = productCatalogService.getRelatedProducts(id);
+    public ResponseEntity<ApiResponse<List<ProductDto>>> getRelatedProducts(
+            @PathVariable UUID id,
+            @RequestParam double latitude,
+            @RequestParam double longitude) {
+        List<ProductDto> related = productCatalogService.getRelatedProducts(id, latitude, longitude);
         return ResponseEntity.ok(ApiResponse.success(related, "Related products retrieved successfully"));
     }
 
     @GetMapping("/products/deals")
-    public ResponseEntity<ApiResponse<List<ProductDto>>> getDailyDeals() {
-        List<ProductDto> deals = productCatalogService.getDailyDeals();
+    public ResponseEntity<ApiResponse<List<ProductDto>>> getDailyDeals(
+            @RequestParam double latitude,
+            @RequestParam double longitude) {
+        List<ProductDto> deals = productCatalogService.getDailyDeals(latitude, longitude);
         return ResponseEntity.ok(ApiResponse.success(deals, "Daily deals retrieved successfully"));
     }
 

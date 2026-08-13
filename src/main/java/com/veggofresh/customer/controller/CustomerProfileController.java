@@ -46,15 +46,6 @@ public class CustomerProfileController {
     private final CustomerProfileService customerProfileService;
     private final AddressService addressService;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // PROFILE
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * GET /api/customer/profile
-     * Returns the current customer's profile. If no profile row exists yet it is
-     * auto-created (idempotent — safe to call on every app launch).
-     */
     @GetMapping("/profile")
     public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> getProfile() {
         CustomerProfileResponseDto profile =
@@ -62,20 +53,6 @@ public class CustomerProfileController {
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile retrieved successfully"));
     }
 
-    /**
-     * PUT /api/customer/profile
-     * Updates the customer's profile. Supports partial updates (PATCH semantics):
-     * - Send only the fields you want to change.
-     * - Omitted / null fields are left untouched.
-     *
-     * Body (JSON):
-     * <pre>
-     * {
-     *   "fullName":  "John Doe",            // optional
-     *   "avatarUrl": "https://cdn.../x.png" // optional — direct URL after cloud upload
-     * }
-     * </pre>
-     */
     @PutMapping("/profile")
     public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile(
             @Valid @RequestBody CustomerProfileUpdateRequestDto request) {
@@ -84,21 +61,12 @@ public class CustomerProfileController {
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile updated successfully"));
     }
 
-    /**
-     * GET /api/customer/profile/summary
-     * Returns a compact summary card including order count, favorites count,
-     * address count, and member-since year — useful for home screen dashboards.
-     */
     @GetMapping("/profile/summary")
     public ResponseEntity<ApiResponse<CustomerProfileSummaryDto>> getProfileSummary() {
         CustomerProfileSummaryDto summary =
                 customerProfileService.getProfileSummary(SecurityUtils.getCurrentUserId());
         return ResponseEntity.ok(ApiResponse.success(summary, "Customer profile summary retrieved successfully"));
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ADDRESSES
-    // ─────────────────────────────────────────────────────────────────────────
 
     @GetMapping("/addresses")
     public ResponseEntity<ApiResponse<List<AddressResponseDto>>> getAddresses() {

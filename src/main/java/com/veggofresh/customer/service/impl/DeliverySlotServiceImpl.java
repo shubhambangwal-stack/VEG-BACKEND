@@ -28,7 +28,6 @@ public class DeliverySlotServiceImpl implements DeliverySlotService {
                     .collect(Collectors.toList());
         }
 
-        // Return slots for both today and tomorrow
         LocalDate today = LocalDate.now();
         LocalDate tomorrow = today.plusDays(1);
         return deliverySlotRepository.findByDateInOrderByDateAscStartTimeAsc(List.of(today, tomorrow)).stream()

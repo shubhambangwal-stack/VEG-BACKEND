@@ -21,6 +21,5 @@ public class AddressResponseDto {
     private double latitude;
     private double longitude;
     private boolean isDefault;
-    /** e.g. "Home", "Office", "Friends" */
     private String label;
 }

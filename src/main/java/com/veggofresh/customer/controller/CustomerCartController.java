@@ -25,39 +25,55 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * PHASE 2 — NEW ARCHITECTURE, multi-cart model (PROJECT_STATE section 2).
+ *
+ * ⚠️ BREAKING CHANGE from the pre-pivot single-cart API:
+ *  - Base path moved from /api/customer/cart to /api/customer/carts (plural).
+ *  - Add-item moved from POST /api/customer/cart to POST /api/customer/carts/items
+ *    (base path now returns the LIST of carts, so it needed to free up for GET).
+ *  - Every mutating endpoint now returns the FULL list of the customer's open
+ *    carts, not a single cart, since one add-to-cart call can change which
+ *    cart an item lands in.
+ *  - Promo-code endpoints now require a cartId path segment
+ *    (/carts/{cartId}/promo-code), since promo is applied per-cart.
+ *
+ * Front-end needs to switch to rendering a "Cart 1 / Cart 2 / ..." list from
+ * every response instead of a single cart object.
+ */
 @RestController
-@RequestMapping("/api/customer/cart")
+@RequestMapping("/api/customer/carts")
 @RequiredArgsConstructor
 public class CustomerCartController {
 
     private final CartService cartService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<CartResponseDto>> getCart() {
-        CartResponseDto cart = cartService.getOrCreateCart(SecurityUtils.getCurrentUserId());
-        return ResponseEntity.ok(ApiResponse.success(cart, "Cart retrieved successfully"));
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> getCarts() {
+        List<CartResponseDto> carts = cartService.getOpenCarts(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(carts, "Carts retrieved successfully"));
     }
 
-    @PostMapping
-    public ResponseEntity<ApiResponse<CartResponseDto>> addItem(
+    @PostMapping("/items")
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> addItem(
             @Valid @RequestBody CartItemRequestDto request) {
-        CartResponseDto cart = cartService.addItemToCart(SecurityUtils.getCurrentUserId(), request);
-        return ResponseEntity.ok(ApiResponse.success(cart, "Item added to cart successfully"));
+        List<CartResponseDto> carts = cartService.addItemToCart(SecurityUtils.getCurrentUserId(), request);
+        return ResponseEntity.ok(ApiResponse.success(carts, "Item added to cart successfully"));
     }
 
     @PutMapping("/items/{id}")
-    public ResponseEntity<ApiResponse<CartResponseDto>> updateItemQuantity(
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> updateItemQuantity(
             @PathVariable UUID id,
             @RequestParam int quantity) {
-        CartResponseDto cart = cartService.updateCartItem(SecurityUtils.getCurrentUserId(), id, quantity);
-        return ResponseEntity.ok(ApiResponse.success(cart, "Cart item updated successfully"));
+        List<CartResponseDto> carts = cartService.updateCartItem(SecurityUtils.getCurrentUserId(), id, quantity);
+        return ResponseEntity.ok(ApiResponse.success(carts, "Cart item updated successfully"));
     }
 
     @DeleteMapping("/items/{id}")
-    public ResponseEntity<ApiResponse<CartResponseDto>> removeItem(
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> removeItem(
             @PathVariable UUID id) {
-        CartResponseDto cart = cartService.removeCartItem(SecurityUtils.getCurrentUserId(), id);
-        return ResponseEntity.ok(ApiResponse.success(cart, "Item removed from cart successfully"));
+        List<CartResponseDto> carts = cartService.removeCartItem(SecurityUtils.getCurrentUserId(), id);
+        return ResponseEntity.ok(ApiResponse.success(carts, "Item removed from cart successfully"));
     }
 
     @GetMapping("/count")
@@ -72,16 +88,18 @@ public class CustomerCartController {
         return ResponseEntity.ok(ApiResponse.success(products, "Cart recommendations retrieved successfully"));
     }
 
-    @PostMapping("/promo-code")
-    public ResponseEntity<ApiResponse<CartResponseDto>> applyPromoCode(
+    @PostMapping("/{cartId}/promo-code")
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> applyPromoCode(
+            @PathVariable UUID cartId,
             @Valid @RequestBody PromoCodeRequestDto request) {
-        CartResponseDto cart = cartService.applyPromoCode(SecurityUtils.getCurrentUserId(), request.getCode());
-        return ResponseEntity.ok(ApiResponse.success(cart, "Promo code applied successfully"));
+        List<CartResponseDto> carts = cartService.applyPromoCode(SecurityUtils.getCurrentUserId(), cartId, request.getCode());
+        return ResponseEntity.ok(ApiResponse.success(carts, "Promo code applied successfully"));
     }
 
-    @DeleteMapping("/promo-code")
-    public ResponseEntity<ApiResponse<CartResponseDto>> removePromoCode() {
-        CartResponseDto cart = cartService.removePromoCode(SecurityUtils.getCurrentUserId());
-        return ResponseEntity.ok(ApiResponse.success(cart, "Promo code removed successfully"));
+    @DeleteMapping("/{cartId}/promo-code")
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> removePromoCode(
+            @PathVariable UUID cartId) {
+        List<CartResponseDto> carts = cartService.removePromoCode(SecurityUtils.getCurrentUserId(), cartId);
+        return ResponseEntity.ok(ApiResponse.success(carts, "Promo code removed successfully"));
     }
 }

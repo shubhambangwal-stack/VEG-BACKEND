@@ -13,9 +13,9 @@ import java.util.UUID;
 @AllArgsConstructor
 public class DeliverySlotDto {
     private UUID slotId;
-    private String date;       // "2024-10-24"
-    private String label;      // "09:00 - 11:00"
-    private String startTime;  // "09:00"
-    private String endTime;    // "11:00"
+    private String date;
+    private String label;
+    private String startTime;
+    private String endTime;
     private boolean isAvailable;
 }

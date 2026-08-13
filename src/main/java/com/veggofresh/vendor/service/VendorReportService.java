@@ -1,13 +1,13 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.platform.exception.BusinessException;
-import com.veggofresh.vendor.entity.Product;
 import com.veggofresh.vendor.entity.Shop;
-import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorListingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +28,8 @@ public class VendorReportService {
 
     private final ShopRepository shopRepository;
     private final OrderRepository orderRepository;
-    private final ProductRepository productRepository;
+    private final VendorListingRepository vendorListingRepository;
+    private final AdminProductService adminProductService;
 
     @Transactional(readOnly = true)
     public Map<String, Object> getSalesReports(UUID ownerUserId) {
@@ -51,9 +52,9 @@ public class VendorReportService {
                 .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
                 .flatMap(o -> o.getItems().stream())
                 .forEach(item -> {
-                    Product product = productRepository.findByIdAndDeletedAtIsNull(item.getProductId()).orElse(null);
-                    if (product != null && product.getShop().getId().equals(shop.getId())) {
-                        salesByProduct.merge(product.getName(), item.getQuantity(), Integer::sum);
+                    if (vendorListingRepository.findByShopIdAndCatalogProductId(shop.getId(), item.getProductId()).isPresent()) {
+                        String name = resolveProductName(item.getProductId());
+                        salesByProduct.merge(name, item.getQuantity(), Integer::sum);
                     }
                 });
 
@@ -93,12 +94,19 @@ public class VendorReportService {
     private BigDecimal calculateShopRevenueForOrder(Order order, UUID shopId) {
         return order.getItems().stream()
                 .map(item -> {
-                    Product product = productRepository.findByIdAndDeletedAtIsNull(item.getProductId()).orElse(null);
-                    if (product != null && product.getShop().getId().equals(shopId)) {
+                    if (vendorListingRepository.findByShopIdAndCatalogProductId(shopId, item.getProductId()).isPresent()) {
                         return item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
                     }
                     return BigDecimal.ZERO;
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private String resolveProductName(UUID catalogProductId) {
+        try {
+            return adminProductService.getProductById(catalogProductId).getName();
+        } catch (Exception e) {
+            return "Unknown Product";
+        }
     }
 }

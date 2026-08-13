@@ -9,8 +9,8 @@ import com.veggofresh.vendor.dto.response.VendorOnboardingStatusResponseDto;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorDocumentType;
-import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorListingRepository;
 import com.veggofresh.vendor.repository.VendorDocumentRepository;
 import com.veggofresh.vendor.service.VendorOnboardingService;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +29,7 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
 
     private final ShopRepository shopRepository;
     private final VendorDocumentRepository documentRepository;
-    private final ProductRepository productRepository;
+    private final VendorListingRepository vendorListingRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -108,7 +108,9 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
             throw new BusinessException("VENDOR_NOT_APPROVED", "Checklist is only available once your application is approved", HttpStatus.FORBIDDEN);
         }
 
-        boolean hasFirstProduct = !productRepository.findAllByShopIdAndDeletedAtIsNull(shop.getId()).isEmpty();
+        // NEW ARCHITECTURE: "first product" now means at least one active listing
+        // against Admin's catalog, not a self-created legacy Product row.
+        boolean hasFirstProduct = vendorListingRepository.countByShopIdAndIsListedTrue(shop.getId()) > 0;
         boolean hasDeliveryRange = shop.getDeliveryRangeKm() != null;
         boolean hasPaymentSettings = shop.isPaymentSettingsConfigured();
 

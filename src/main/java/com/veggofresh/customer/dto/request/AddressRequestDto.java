@@ -31,6 +31,5 @@ public class AddressRequestDto {
 
     private Boolean isDefault = false;
 
-    /** Optional label e.g. "Home", "Office", "Friends" */
     private String label;
 }

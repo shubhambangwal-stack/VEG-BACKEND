@@ -19,26 +19,15 @@ public class OrderTrackingResponseDto {
     private String orderNumber;
     private String status;
     private String deliveryAddress;
-    private String estimatedDeliveryWindow;   // "Today, 2:30 PM – 4:00 PM"
-
-    // Live delivery agent coordinates (simulated offset from delivery address)
+    private String estimatedDeliveryWindow;
     private double currentLatitude;
     private double currentLongitude;
-
-    // Delivery agent info
     private String deliveryAgentName;
     private String deliveryAgentPhone;
     private String deliveryAgentPhotoUrl;
-
-    // Status progress timeline
     private List<StatusTimelineDto> statusTimeline;
-
-    // Order items in the tracking screen
     private List<OrderItemResponseDto> items;
-
     private BigDecimal total;
-
-    // Post-delivery fields (visible after DELIVERED status)
     private String deliveryPhotoUrl;
     private String deliveryLocationNote;
     private Instant deliveredAt;

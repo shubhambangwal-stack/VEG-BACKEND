@@ -1,16 +1,15 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.response.DashboardSummaryResponseDto;
 import com.veggofresh.vendor.dto.response.RecentOrderDto;
-import com.veggofresh.vendor.entity.Product;
 import com.veggofresh.vendor.entity.Shop;
-import com.veggofresh.vendor.repository.InventoryItemRepository;
-import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorListingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +34,8 @@ import java.util.stream.Collectors;
 public class VendorDashboardService {
 
     private final ShopRepository shopRepository;
-    private final ProductRepository productRepository;
-    private final InventoryItemRepository inventoryItemRepository;
+    private final VendorListingRepository vendorListingRepository;
+    private final AdminProductService adminProductService;
     private final OrderRepository orderRepository;
 
     @Transactional(readOnly = true)
@@ -44,11 +43,11 @@ public class VendorDashboardService {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("SHOP_NOT_FOUND", "Vendor shop not found"));
 
-        List<Product> products = productRepository.findAllByShopIdAndDeletedAtIsNull(shop.getId());
-        long outOfStockCount = products.stream()
-                .map(product -> inventoryItemRepository.findByProductIdAndDeletedAtIsNull(product.getId()))
-                .filter(opt -> opt.isPresent() && opt.get().getStockQuantity() <= 0)
-                .count();
+        // NEW ARCHITECTURE: stock is no longer tracked at all (vendor accepts/
+        // rejects each order manually based on real stock at the time) -- this
+        // card is vestigial, kept at 0 rather than removed from the DTO/API
+        // contract outright. See NOTES_VENDOR.md.
+        long outOfStockCount = 0;
 
         List<Order> allShopOrders = orderRepository.findByShopId(shop.getId());
 
@@ -113,8 +112,7 @@ public class VendorDashboardService {
     private BigDecimal calculateShopRevenueForOrder(Order order, UUID shopId) {
         return order.getItems().stream()
                 .map(item -> {
-                    Product product = productRepository.findByIdAndDeletedAtIsNull(item.getProductId()).orElse(null);
-                    if (product != null && product.getShop().getId().equals(shopId)) {
+                    if (vendorListingRepository.findByShopIdAndCatalogProductId(shopId, item.getProductId()).isPresent()) {
                         return item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
                     }
                     return BigDecimal.ZERO;
@@ -125,8 +123,7 @@ public class VendorDashboardService {
     private RecentOrderDto mapToRecentOrderDto(Order order, UUID shopId) {
         String itemsSummary = order.getItems().stream()
                 .map(item -> {
-                    Product product = productRepository.findByIdAndDeletedAtIsNull(item.getProductId()).orElse(null);
-                    String name = product != null ? product.getName() : "Unknown Product";
+                    String name = resolveProductName(item.getProductId());
                     return name + " x " + item.getQuantity();
                 })
                 .collect(Collectors.joining(", "));
@@ -140,6 +137,14 @@ public class VendorDashboardService {
                 .amount(shopAmount.doubleValue())
                 .status(order.getStatus().name().toLowerCase())
                 .build();
+    }
+
+    private String resolveProductName(UUID catalogProductId) {
+        try {
+            return adminProductService.getProductById(catalogProductId).getName();
+        } catch (Exception e) {
+            return "Unknown Product";
+        }
     }
 
     private String formatTimeAgo(Instant createdAt) {

@@ -9,8 +9,8 @@ import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.response.VendorOrderDetailResponseDto;
 import com.veggofresh.vendor.dto.response.VendorOrderItemDto;
 import com.veggofresh.vendor.entity.Shop;
-import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorListingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,9 +31,8 @@ public class VendorOrderManagementService {
     private static final BigDecimal SERVICE_FEE_PERCENT = BigDecimal.valueOf(10);
 
     private final CustomerOrderService customerOrderService;
-    private final VendorInventoryService vendorInventoryService;
     private final ShopRepository shopRepository;
-    private final ProductRepository productRepository;
+    private final VendorListingRepository vendorListingRepository;
     private final UserLookupService userLookupService;
 
     @Transactional(readOnly = true)
@@ -114,10 +113,11 @@ public class VendorOrderManagementService {
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
     }
 
+    // NEW ARCHITECTURE: item.getProductId() is now a catalog product id --
+    // "belongs to shop" means this shop currently has (or had) it listed,
+    // not that the shop owns a legacy Product row.
     private boolean belongsToShop(OrderItemResponseDto item, UUID shopId) {
-        return productRepository.findByIdAndDeletedAtIsNull(item.getProductId())
-                .map(product -> product.getShop().getId().equals(shopId))
-                .orElse(false);
+        return vendorListingRepository.findByShopIdAndCatalogProductId(shopId, item.getProductId()).isPresent();
     }
 
     private VendorOrderItemDto mapItemToDto(OrderItemResponseDto item) {

@@ -19,7 +19,7 @@ import java.util.UUID;
 @Getter
 @Setter
 @Where(clause = "deleted_at IS NULL")
-public class    CartItem extends BaseEntity {
+public class CartItem extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cart_id", nullable = false)

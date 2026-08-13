@@ -18,21 +18,19 @@ public interface CustomerOrderService {
     void updateOrderStatus(UUID orderId, String status);
     List<OrderResponseDto> getOrdersByShopId(UUID shopId);
 
-    // ── Delivery-facing methods (GAP 18) ──────────────────
+    // ── Delivery-facing methods ──────────────────────────
 
-    /**
-     * Called by Delivery module when a delivery agent is assigned to an order.
-     */
     void assignDeliveryAgent(UUID orderId, String agentName, String agentPhone,
                              String agentPhotoUrl, String estimatedWindow);
 
-    /**
-     * Called by Delivery module upon delivery completion.
-     */
     void markDelivered(UUID orderId, String deliveryPhotoUrl, String locationNote);
 
     /**
-     * Returns the OTP for order handover. Called by Delivery module.
+     * LEGACY — do not switch to this. Weak hashCode-derived OTP, no expiry,
+     * no attempt limit. Kept only because it's a named interface method
+     * something might still call; Delivery's own real OTP system (random,
+     * time-limited, attempt-capped) is the real implementation. See
+     * PROJECT_STATE "Newly discovered Customer methods" section.
      */
     String getDeliveryOtp(UUID orderId);
 }

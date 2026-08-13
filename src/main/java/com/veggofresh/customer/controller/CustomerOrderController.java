@@ -2,6 +2,8 @@ package com.veggofresh.customer.controller;
 
 import com.veggofresh.customer.dto.request.OrderRequestDto;
 import com.veggofresh.customer.dto.request.RatingRequestDto;
+import com.veggofresh.customer.dto.response.CartResponseDto;
+import com.veggofresh.customer.dto.response.CheckoutResultDto;
 import com.veggofresh.customer.dto.response.CheckoutSummaryDto;
 import com.veggofresh.customer.dto.response.DeliverySlotDto;
 import com.veggofresh.customer.dto.response.InvoiceDto;
@@ -37,11 +39,20 @@ public class CustomerOrderController {
     private final OrderService orderService;
     private final DeliverySlotService deliverySlotService;
 
+    /**
+     * PHASE 2 — BREAKING CHANGE: response is now {@link CheckoutResultDto}
+     * (a list of orders + a list of issues) instead of a single
+     * OrderResponseDto, since one checkout call can produce N orders — one
+     * per open cart that still validates.
+     */
     @PostMapping
-    public ResponseEntity<ApiResponse<OrderResponseDto>> checkout(
+    public ResponseEntity<ApiResponse<CheckoutResultDto>> checkout(
             @Valid @RequestBody OrderRequestDto request) {
-        OrderResponseDto order = orderService.checkout(SecurityUtils.getCurrentUserId(), request);
-        return ResponseEntity.ok(ApiResponse.success(order, "Order placed successfully"));
+        CheckoutResultDto result = orderService.checkout(SecurityUtils.getCurrentUserId(), request);
+        String message = result.getIssues().isEmpty()
+                ? "Order placed successfully"
+                : "Order placed for available items — some carts need your attention";
+        return ResponseEntity.ok(ApiResponse.success(result, message));
     }
 
     @GetMapping
@@ -87,11 +98,18 @@ public class CustomerOrderController {
         return ResponseEntity.ok(ApiResponse.success(order, "Order cancelled successfully"));
     }
 
+    /**
+     * PHASE 2 — CHANGED BEHAVIOR: reorder no longer places an order directly.
+     * It re-adds the original order's items back into the cart system (same
+     * multi-cart logic as any add-to-cart call) and returns the resulting
+     * open carts. The customer reviews and calls checkout() again, same as
+     * any other cart — see OrderService.reorder() javadoc for why.
+     */
     @PostMapping("/{id}/reorder")
-    public ResponseEntity<ApiResponse<OrderResponseDto>> reorder(
+    public ResponseEntity<ApiResponse<List<CartResponseDto>>> reorder(
             @PathVariable UUID id) {
-        OrderResponseDto order = orderService.reorder(SecurityUtils.getCurrentUserId(), id);
-        return ResponseEntity.ok(ApiResponse.success(order, "Order placed from history successfully"));
+        List<CartResponseDto> carts = orderService.reorder(SecurityUtils.getCurrentUserId(), id);
+        return ResponseEntity.ok(ApiResponse.success(carts, "Order items added back to your cart — review and checkout when ready"));
     }
 
     @GetMapping("/{id}/invoice")
@@ -101,6 +119,7 @@ public class CustomerOrderController {
         return ResponseEntity.ok(ApiResponse.success(invoice, "Invoice generated successfully"));
     }
 
+    /** PHASE 2 — response shape changed to a per-cart breakdown + grand total. */
     @GetMapping("/checkout/summary")
     public ResponseEntity<ApiResponse<CheckoutSummaryDto>> getCheckoutSummary(
             @RequestParam UUID addressId) {

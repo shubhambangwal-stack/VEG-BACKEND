@@ -7,8 +7,8 @@ import com.veggofresh.vendor.dto.response.VendorProfileStatsResponseDto;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorShopRating;
-import com.veggofresh.vendor.repository.ProductRepository;
 import com.veggofresh.vendor.repository.ShopRepository;
+import com.veggofresh.vendor.repository.VendorListingRepository;
 import com.veggofresh.vendor.repository.VendorShopRatingRepository;
 import com.veggofresh.vendor.service.VendorStatsService;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +32,7 @@ import java.util.UUID;
 public class VendorStatsServiceImpl implements VendorStatsService {
 
     private final ShopRepository shopRepository;
-    private final ProductRepository productRepository;
+    private final VendorListingRepository vendorListingRepository;
     private final CustomerOrderService customerOrderService;
     private final VendorShopRatingRepository ratingRepository;
 
@@ -48,7 +48,7 @@ public class VendorStatsServiceImpl implements VendorStatsService {
                 .map(item -> item.getSubTotal())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        long activeItemsCount = productRepository.findAllByShopIdAndIsActiveTrueAndDeletedAtIsNull(shop.getId()).size();
+        long activeItemsCount = vendorListingRepository.countByShopIdAndIsListedTrue(shop.getId());
 
         List<VendorShopRating> ratings = ratingRepository.findByShopId(shop.getId());
         Double storeRating = ratings.isEmpty() ? null
@@ -63,9 +63,7 @@ public class VendorStatsServiceImpl implements VendorStatsService {
                 .build();
     }
 
-    private boolean belongsToShop(UUID productId, UUID shopId) {
-        return productRepository.findByIdAndDeletedAtIsNull(productId)
-                .map(product -> product.getShop().getId().equals(shopId))
-                .orElse(false);
+    private boolean belongsToShop(UUID catalogProductId, UUID shopId) {
+        return vendorListingRepository.findByShopIdAndCatalogProductId(shopId, catalogProductId).isPresent();
     }
 }

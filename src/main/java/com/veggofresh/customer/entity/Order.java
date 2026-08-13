@@ -2,10 +2,14 @@ package com.veggofresh.customer.entity;
 
 import com.veggofresh.platform.common.BaseEntity;
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.Getter;
@@ -16,7 +20,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -49,7 +55,6 @@ public class Order extends BaseEntity {
     private List<OrderItem> items = new ArrayList<>();
 
     // ── Order Number ─────────────────────────────────────────
-    /** Human-readable order number, e.g. "#VG-2940582". Auto-generated at checkout. */
     @Column(name = "order_number", unique = true, length = 20)
     private String orderNumber;
 
@@ -61,7 +66,6 @@ public class Order extends BaseEntity {
     private BigDecimal estimatedTax;
 
     // ── Payment Reference ────────────────────────────────────
-    /** UUID reference only — PaymentMethod entity lives in the Payment module. */
     @Column(name = "payment_method_id", length = 36)
     private String paymentMethodId;
 
@@ -69,7 +73,6 @@ public class Order extends BaseEntity {
     @Column(name = "scheduled_date")
     private LocalDate scheduledDate;
 
-    /** e.g. "09:00 - 11:00" */
     @Column(name = "delivery_time_slot", length = 30)
     private String deliveryTimeSlot;
 
@@ -83,7 +86,6 @@ public class Order extends BaseEntity {
     @Column(name = "delivery_agent_photo_url", columnDefinition = "TEXT")
     private String deliveryAgentPhotoUrl;
 
-    /** e.g. "2:30 PM – 4:00 PM" */
     @Column(name = "estimated_delivery_window", length = 50)
     private String estimatedDeliveryWindow;
 
@@ -107,7 +109,6 @@ public class Order extends BaseEntity {
     @Column(name = "delivery_photo_url", columnDefinition = "TEXT")
     private String deliveryPhotoUrl;
 
-    /** e.g. "Front Door", "Reception" */
     @Column(name = "delivery_location_note", length = 100)
     private String deliveryLocationNote;
 
@@ -117,4 +118,24 @@ public class Order extends BaseEntity {
 
     @Column(name = "promo_discount", precision = 10, scale = 2)
     private BigDecimal promoDiscount;
+
+    // ── Multi-cart / vendor-broadcast prep (PROJECT_STATE NEW ARCHITECTURE §2-3) ──
+    /**
+     * The cart this order was created from. The cart itself is soft-deleted
+     * immediately after successful conversion; kept here purely for audit/debug.
+     */
+    @Column(name = "source_cart_id")
+    private UUID sourceCartId;
+
+    /**
+     * Vendor candidates re-validated fresh at checkout time. Every order has
+     * exactly one vendor by construction (§3) — this set is the pool the
+     * future simultaneous-broadcast + atomic-accept flow (owned by Vendor
+     * module) will broadcast to. Customer module's responsibility stops at
+     * handing off a validated candidate set; nothing reads this yet.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "order_candidate_vendors", joinColumns = @JoinColumn(name = "order_id"))
+    @Column(name = "vendor_id")
+    private Set<UUID> candidateVendorIds = new HashSet<>();
 }

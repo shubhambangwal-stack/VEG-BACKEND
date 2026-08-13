@@ -155,8 +155,7 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
         BigDecimal lifetime = orderRepository.sumTotalAmountByUserId(user.getId());
 
         String state = resolveAccountState(user);
-        String customerId = "CUST-" + (Math.abs(user.getId().hashCode()) % 100000);
-
+        String customerId = buildCustomerId(user.getId());
         return AdminCustomerLedgerDto.builder()
                 .customerId(customerId)
                 .userId(user.getId())
@@ -181,7 +180,7 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
 
         String infraction = resolveInfraction(flagsRaised, user.isBlocked());
         String state = user.isBlocked() ? "Blocked" : "Active";
-        String customerId = "CUST-" + (Math.abs(user.getId().hashCode()) % 100000);
+        String customerId = buildCustomerId(user.getId());
 
         return ModerationLedgerRowDto.builder()
                 .customerId(customerId)
@@ -193,6 +192,10 @@ public class AdminCustomerServiceImpl implements AdminCustomerService {
                 .accountState(state)
                 .isBlocked(user.isBlocked())
                 .build();
+    }
+
+    private String buildCustomerId(UUID userId) {
+        return "CUST-" + userId.toString().substring(0, 8).toUpperCase();
     }
 
     private String resolveAccountState(User user) {

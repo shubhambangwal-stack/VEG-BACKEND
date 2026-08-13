@@ -31,13 +31,8 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
     private final WishlistRepository wishlistRepository;
     private final UserLookupService userLookupService;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // GET / CREATE
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     public CustomerProfileResponseDto getOrCreateProfile(UUID userId) {
-        // Verify user exists in auth module
         UserSummaryDto userSummary = userLookupService.findById(userId)
                 .orElseThrow(() -> new BusinessException("CUSTOMER_USER_NOT_FOUND", "User not found in Auth module."));
 
@@ -45,17 +40,11 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
                 .orElseGet(() -> {
                     CustomerProfile newProfile = new CustomerProfile();
                     newProfile.setUserId(userId);
-                    // flush so that @CreationTimestamp / @UpdateTimestamp are populated
-                    CustomerProfile saved = customerProfileRepository.saveAndFlush(newProfile);
-                    return saved;
+                    return customerProfileRepository.saveAndFlush(newProfile);
                 });
 
         return mapToDto(profile, userSummary);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // UPDATE — single API, PATCH semantics (only non-null fields are applied)
-    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     public CustomerProfileResponseDto updateProfile(UUID userId, CustomerProfileUpdateRequestDto request) {
@@ -69,7 +58,6 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
                     return customerProfileRepository.saveAndFlush(newProfile);
                 });
 
-        // Apply only the fields the client actually provided
         if (request.getFullName() != null) {
             profile.setFullName(request.getFullName());
         }
@@ -80,10 +68,6 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
         CustomerProfile saved = customerProfileRepository.saveAndFlush(profile);
         return mapToDto(saved, userSummary);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SUMMARY
-    // ─────────────────────────────────────────────────────────────────────────
 
     @Override
     @Transactional(readOnly = true)
@@ -102,7 +86,6 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
         long favoritesCount = wishlistRepository.countByUserId(userId);
         long addressCount   = addressRepository.countByUserId(userId);
 
-        // createdAt guaranteed non-null after saveAndFlush; fall back to current year if somehow null
         int memberSinceYear = safeYear(profile.getCreatedAt());
 
         return CustomerProfileSummaryDto.builder()
@@ -118,20 +101,12 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
                 .build();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // AVATAR — kept for backward compat (called internally by old avatar upload)
-    // ─────────────────────────────────────────────────────────────────────────
-
     @Override
     public CustomerProfileResponseDto updateAvatar(UUID userId, String avatarUrl) {
         CustomerProfileUpdateRequestDto req = new CustomerProfileUpdateRequestDto();
         req.setAvatarUrl(avatarUrl);
         return updateProfile(userId, req);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PRIVATE HELPERS
-    // ─────────────────────────────────────────────────────────────────────────
 
     private CustomerProfileResponseDto mapToDto(CustomerProfile profile, UserSummaryDto userSummary) {
         return CustomerProfileResponseDto.builder()
@@ -147,10 +122,6 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
                 .build();
     }
 
-    /**
-     * Safely extracts the year from an Instant, returning the current year if the timestamp is null.
-     * Guards against NPE on newly created profiles before the first flush.
-     */
     private int safeYear(Instant instant) {
         if (instant == null) {
             return Instant.now().atZone(ZoneId.of("UTC")).getYear();
