@@ -132,16 +132,4 @@
             </plugin>
         </plugins>
     </build>
-
-    <dependencies>
-        <!-- Firebase Admin SDK for Push Notifications -->
-        <dependency>
-            <groupId>com.google.firebase</groupId>
-            <artifactId>firebase-admin</artifactId>
-            <version>>=22.0.0</version>
-        </dependency>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>
