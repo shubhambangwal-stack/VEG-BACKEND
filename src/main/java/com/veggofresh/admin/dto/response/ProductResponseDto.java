@@ -23,6 +23,8 @@ public class ProductResponseDto {
     private String subcategoryName;
     private BigDecimal price;
     private String imageUrl;
+    private String quantityUnit;
+    private BigDecimal quantityValue;
     private boolean isActive;
     private Instant createdAt;
     private Instant updatedAt;

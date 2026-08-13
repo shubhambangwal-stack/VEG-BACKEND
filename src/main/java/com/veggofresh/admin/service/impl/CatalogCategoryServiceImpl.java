@@ -68,6 +68,7 @@ public class CatalogCategoryServiceImpl implements CatalogCategoryService {
         return categories.stream().map(this::toDto).toList();
     }
 
+
     @Override
     public CategoryResponseDto setActive(UUID id, boolean active) {
         CatalogCategory category = getEntity(id);

@@ -92,6 +92,17 @@ veggofresh:
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
 
+  # ── Razorpay Payment Gateway ──────────────────────────────
+  razorpay:
+    # Test-mode keys from https://dashboard.razorpay.com/app/keys
+    # Override via env vars in all environments. Never commit real keys.
+    key-id: ${RAZORPAY_KEY_ID:rzp_test_PLACEHOLDER}
+    key-secret: ${RAZORPAY_KEY_SECRET:PLACEHOLDER_SECRET}
+    # Webhook secret from https://dashboard.razorpay.com/app/webhooks
+    # This is DIFFERENT from key-secret — set separately in Razorpay dashboard.
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:PLACEHOLDER_WEBHOOK_SECRET}
+    currency: INR
+
 # ── SpringDoc / Swagger ───────────────────────────────────
 springdoc:
   api-docs:

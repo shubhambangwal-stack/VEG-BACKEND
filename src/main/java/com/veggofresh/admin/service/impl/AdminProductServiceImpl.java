@@ -46,6 +46,8 @@ public class AdminProductServiceImpl implements AdminProductService {
         product.setSubcategory(subcategory);
         product.setPrice(request.getPrice());
         product.setImageUrl(request.getImageUrl());
+        product.setQuantityUnit(request.getQuantityUnit());
+        product.setQuantityValue(request.getQuantityValue());
         product.setActive(true);
         return toDto(productRepository.save(product));
     }
@@ -71,6 +73,8 @@ public class AdminProductServiceImpl implements AdminProductService {
         product.setSubcategory(subcategory);
         product.setPrice(request.getPrice());
         product.setImageUrl(request.getImageUrl());
+        product.setQuantityUnit(request.getQuantityUnit());
+        product.setQuantityValue(request.getQuantityValue());
         return toDto(productRepository.save(product));
     }
 
@@ -131,6 +135,8 @@ public class AdminProductServiceImpl implements AdminProductService {
                 .subcategoryName(p.getSubcategory().getName())
                 .price(p.getPrice())
                 .imageUrl(p.getImageUrl())
+                .quantityUnit(p.getQuantityUnit())
+                .quantityValue(p.getQuantityValue())
                 .isActive(p.isActive())
                 .createdAt(p.getCreatedAt())
                 .updatedAt(p.getUpdatedAt())

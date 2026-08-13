@@ -30,4 +30,13 @@ public class ProductRequestDto {
     private BigDecimal price;
 
     private String imageUrl;
+
+    @NotBlank(message = "quantityUnit is required")
+    @Size(max = 50)
+    private String quantityUnit;
+
+    @NotNull(message = "quantityValue is required")
+    @DecimalMin(value = "0.01", message = "quantityValue must be greater than 0")
+    @Digits(integer = 8, fraction = 2)
+    private BigDecimal quantityValue;
 }

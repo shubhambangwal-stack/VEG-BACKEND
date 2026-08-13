@@ -79,7 +79,9 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/actuator/health"
+            "/actuator/health",
+            // Razorpay webhook — no JWT; secured by X-Razorpay-Signature HMAC in PaymentService
+            "/api/payment/webhook"
     };
 
     @Bean

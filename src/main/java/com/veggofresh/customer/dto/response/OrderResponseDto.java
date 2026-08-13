@@ -29,7 +29,11 @@ public class OrderResponseDto {
     private double longitude;
     private String scheduledDate;
     private String deliveryTimeSlot;   // "09:00 - 11:00"
-    private String paymentMethod;      // display label: "Credit Card", "COD"
+    private String paymentMethod;      // display label: "Razorpay", "COD", etc.
+    /** Payment lifecycle status: CREATED | CAPTURED | FAILED | null (legacy/COD) */
+    private String paymentStatus;
+    /** Razorpay order ID — null for COD / pre-payment-module orders */
+    private String razorpayOrderId;
     private int itemCount;             // quick badge count
     private List<String> itemThumbnails; // first 2-3 product image URLs
     private String estimatedDeliveryWindow; // "Today, 2:30 PM – 4:00 PM"

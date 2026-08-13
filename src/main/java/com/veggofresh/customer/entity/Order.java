@@ -65,6 +65,22 @@ public class Order extends BaseEntity {
     @Column(name = "payment_method_id", length = 36)
     private String paymentMethodId;
 
+    /**
+     * Razorpay order ID (format: {@code order_XXXX}).
+     * Set when a Razorpay payment order is created ({@code POST /api/payment/orders}).
+     * Null for COD or pre-payment-module orders.
+     */
+    @Column(name = "razorpay_order_id", length = 100)
+    private String razorpayOrderId;
+
+    /**
+     * Denormalized mirror of {@code Payment.status} for quick read without join.
+     * Values: {@code CREATED}, {@code CAPTURED}, {@code FAILED}, or null for legacy orders.
+     * Updated by PaymentService on each payment lifecycle transition.
+     */
+    @Column(name = "payment_status", length = 30)
+    private String paymentStatus;
+
     // ── Scheduled Delivery ───────────────────────────────────
     @Column(name = "scheduled_date")
     private LocalDate scheduledDate;

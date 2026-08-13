@@ -40,6 +40,12 @@ public class CatalogProduct extends BaseEntity {
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    @Column(name = "quantity_unit", nullable = false, length = 50)
+    private String quantityUnit = "kg";
+
+    @Column(name = "quantity_value", nullable = false, precision = 10, scale = 2)
+    private BigDecimal quantityValue = BigDecimal.ONE;
+
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;
 }

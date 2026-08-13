@@ -89,6 +89,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- ===== Razorpay Payment Gateway ===== -->
+        <dependency>
+            <groupId>com.razorpay</groupId>
+            <artifactId>razorpay-java</artifactId>
+            <version>1.4.5</version>
+        </dependency>
+
         <!-- ===== Lombok ===== -->
         <dependency>
             <groupId>org.projectlombok</groupId>
