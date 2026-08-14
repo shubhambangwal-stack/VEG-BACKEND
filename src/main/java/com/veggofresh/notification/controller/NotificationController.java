@@ -1,6 +1,7 @@
 package com.veggofresh.notification.controller;
 
 import com.veggofresh.notification.dto.*;
+import com.veggofresh.notification.entity.Notification;
 import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.notification.service.NotificationSenderService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 

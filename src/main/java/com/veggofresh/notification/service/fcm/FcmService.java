@@ -1,46 +1,30 @@
 package com.veggofresh.notification.service.fcm;
 
-import com.veggofresh.notification.entity.Notification;
-import com.veggofresh.platform.common.BaseEntity;
-import com.google.firebase.messaging.*;
-import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import com.google.firebase.messaging.AndroidConfig;
+import com.google.firebase.messaging.AndroidNotification;
+import com.google.firebase.messaging.ApnsConfig;
+import com.google.firebase.messaging.Aps;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.MulticastMessage;
+import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 public class FcmService {
 
-    @Value("${fcm.server.key}")
-    private String serverKey;
-
-    private FirebaseMessagingClient fcmClient;
-
-    @PostConstruct
-    public void init() {
-        if (serverKey != null && !serverKey.isEmpty()) {
-            this.fcmClient = new FirebaseMessagingClient(serverKey);
-        }
-    }
-
-    /**
-     * Send push notification to a specific device token
-     */
-    @Transactional
     public String sendToToken(String token, String title, String body, Map<String, String> data) throws Exception {
-        if (fcmClient == null) {
-            // FCM not configured - log and return null
-            // In production, this would be monitored
+        if (token == null || token.isEmpty()) {
             return null;
         }
 
         Message message = Message.builder()
                 .setToken(token)
-                .setNotification(Notification.builder()
+                .setNotification(com.google.firebase.messaging.Notification.builder()
                         .setTitle(title)
                         .setBody(body)
                         .build())
@@ -61,82 +45,59 @@ public class FcmService {
                     .build())
                 .build();
 
-        return fcmClient.sendAsync(message).get();
+        return FirebaseMessaging.getInstance().sendAsync(message).get();
     }
 
-    /**
-     * Send push notification to a topic (for broadcast to multiple devices)
-     */
-    @Transactional
     public String sendToTopic(String topic, String title, String body, Map<String, String> data) throws Exception {
-        if (fcmClient == null) {
+        if (topic == null || topic.isEmpty()) {
             return null;
         }
 
         Message message = Message.builder()
                 .setTopic(topic)
-                .setNotification(Notification.builder()
+                .setNotification(com.google.firebase.messaging.Notification.builder()
                         .setTitle(title)
                         .setBody(body)
                         .build())
                 .putAllData(data)
                 .build();
 
-        return fcmClient.sendAsync(message).get();
+        return FirebaseMessaging.getInstance().sendAsync(message).get();
     }
 
-    /**
-     * Send multicast to multiple tokens (up to 500 at once)
-     */
-    @Transactional
     public String sendToMultipleTokens(Collection<String> tokens, String title, String body, Map<String, String> data) throws Exception {
-        if (fcmClient == null) {
+        if (tokens == null || tokens.isEmpty()) {
             return null;
         }
 
         MulticastMessage message = MulticastMessage.builder()
                 .addAllTokens(new ArrayList<>(tokens))
-                .setNotification(Notification.builder()
+                .setNotification(com.google.firebase.messaging.Notification.builder()
                         .setTitle(title)
                         .setBody(body)
                         .build())
                 .putAllData(data)
                 .build();
 
-        return fcmClient.sendAsync(message).get();
+        FirebaseMessaging.getInstance().sendMulticastAsync(message).get();
+        return null;
     }
 
-    /**
-     * Subscribe a device token to a topic
-     */
-    @Transactional
     public String subscribeToTopic(String token, String topic) throws Exception {
-        if (fcmClient == null) {
+        if (token == null || token.isEmpty() || topic == null || topic.isEmpty()) {
             return null;
         }
 
-        SubscribeToTopicRequest request = SubscribeToTopicRequest.builder()
-                .setTopicName(topic)
-                .setToken(token)
-                .build();
-
-        return fcmClient.sendAsync(request).get();
+        FirebaseMessaging.getInstance().subscribeToTopicAsync(List.of(token), topic).get();
+        return topic;
     }
 
-    /**
-     * Unsubscribe a device token from a topic
-     */
-    @Transactional
     public String unsubscribeFromTopic(String token, String topic) throws Exception {
-        if (fcmClient == null) {
+        if (token == null || token.isEmpty() || topic == null || topic.isEmpty()) {
             return null;
         }
 
-        UnsubscribeFromTopicRequest request = UnsubscribeFromTopicRequest.builder()
-                .setTopicName(topic)
-                .setToken(token)
-                .build();
-
-        return fcmClient.sendAsync(request).get();
+        FirebaseMessaging.getInstance().unsubscribeFromTopicAsync(List.of(token), topic).get();
+        return topic;
     }
 }

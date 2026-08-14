@@ -2,7 +2,7 @@ package com.veggofresh.notification.service;
 
 import com.veggofresh.notification.dto.NotificationSendRequestDto;
 import com.veggofresh.notification.entity.Notification;
-import com.veggofresh.notification.entity.Type;
+import com.veggofresh.notification.entity.Notification.Type;
 import com.veggofresh.notification.entity.Notification.Status;
 import com.veggofresh.notification.entity.Notification.Channel;
 import com.veggofresh.notification.service.fcm.FcmService;
@@ -23,7 +23,6 @@ public class NotificationSenderService {
         String title = "Order Accepted";
         String message = "Your order has been accepted by the vendor";
 
-        // Send in-app notification
         NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
         inAppRequest.setRecipientId(customerId);
         inAppRequest.setRecipientType("CUSTOMER");
@@ -34,17 +33,7 @@ public class NotificationSenderService {
         inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
         notificationService.sendNotification(inAppRequest);
 
-        // Send push notification to customer
-        // TODO: In production, fetch customer's FCM token from registry
-        // String fcmToken = fcmTokenRegistry.getToken(customerId, "CUSTOMER");
-        // if (fcmToken != null) {
-        //     fcmService.sendToToken(fcmToken, title, message, Map.of(
-        //         "orderId", orderId.toString(),
-        //         "type", "order_accepted"
-        //     ));
-        // }
-
-        return null; // In-app only for now; push re-enable when token registry exists
+        return null;
     }
 
     @Transactional
@@ -63,7 +52,6 @@ public class NotificationSenderService {
         String title = "Order Status Update";
         String message = "Your order status has been updated to " + displayStatus;
 
-        // In-app notification
         NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
         inAppRequest.setRecipientId(customerId);
         inAppRequest.setRecipientType("CUSTOMER");
@@ -82,7 +70,6 @@ public class NotificationSenderService {
         String title = "New Order Received";
         String message = "You have received a new order from " + restaurantName;
 
-        // In-app notification to vendor
         NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
         inAppRequest.setRecipientId(vendorId);
         inAppRequest.setRecipientType("VENDOR");
@@ -93,15 +80,6 @@ public class NotificationSenderService {
         inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
         notificationService.sendNotification(inAppRequest);
 
-        // TODO: Send push to vendor's mobile app
-        // String fcmToken = fcmTokenRegistry.getToken(vendorId, "VENDOR");
-        // if (fcmToken != null) {
-        //     fcmService.sendToToken(fcmToken, title, message, Map.of(
-        //         "orderId", orderId.toString(),
-        //         "type", "new_order"
-        // ));
-        // }
-
         return null;
     }
 
@@ -110,7 +88,6 @@ public class NotificationSenderService {
         String title = "New Delivery Assignment";
         String message = partnerName + " has been assigned to your order";
 
-        // In-app notification
         NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
         inAppRequest.setRecipientId(customerId);
         inAppRequest.setRecipientType("CUSTOMER");
@@ -121,18 +98,16 @@ public class NotificationSenderService {
         inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
         notificationService.sendNotification(inAppRequest);
 
-        // TODO: Send push to customer
         return null;
     }
 
     @Transactional
-    public Notification sendPickupOtp(String vendorId, UUID assignmentId, String otpCode) {
+    public Notification sendPickupOtp(UUID vendorId, UUID assignmentId, String otpCode) {
         String title = "Pickup OTP";
         String message = "Your pickup OTP is: " + otpCode + " (valid for 10 minutes)";
 
-        // In-app notification to delivery partner
         NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(vendorId); // vendor issuing OTP
+        inAppRequest.setRecipientId(vendorId);
         inAppRequest.setRecipientType("VENDOR");
         inAppRequest.setNotificationType(Type.PICKUP_OTP.name());
         inAppRequest.setTitle(title);
@@ -140,15 +115,6 @@ public class NotificationSenderService {
         inAppRequest.setPriority("HIGH");
         inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
         notificationService.sendNotification(inAppRequest);
-
-        // Push to delivery partner (TODO: fetch token)
-        // String fcmToken = fcmTokenRegistry.getToken(vendorId, "DELIVERY_PARTNER");
-        // if (fcmToken != null) {
-        //     fcmService.sendToToken(fcmToken, title, message, Map.of(
-         //       "assignmentId", assignmentId.toString(),
-          //      "otp", otpCode
-          //  ));
-        // }
 
         return null;
     }

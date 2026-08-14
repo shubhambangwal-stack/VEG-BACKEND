@@ -13,7 +13,7 @@ import java.util.UUID;
 @Table(name = "notifications")
 @Getter
 @Setter
-@Where(clause "deleted_at IS NULL")
+@Where(clause = "deleted_at IS NULL")
 public class Notification extends BaseEntity {
 
     @Column(name = "recipient_type", nullable = false)

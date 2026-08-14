@@ -73,10 +73,10 @@ public class NotificationServiceImpl implements NotificationService {
                     dto.setTitle(notification.getTitle());
                     dto.setMessage(notification.getMessage());
                     dto.setStatus(notification.getStatus());
-                    dto.setDeliveredAt(notification.getSentAt());
-                    dto.setReadAt(notification.getReadAt());
+                    dto.setDeliveredAt(notification.getSentAt() != null ? notification.getSentAt().toString() : null);
+                    dto.setReadAt(notification.getReadAt() != null ? notification.getReadAt().toString() : null);
                     dto.setActionUrl(notification.getActionUrl());
-                    return Optional.of(dto);
+                    return dto;
                 });
     }
 
@@ -149,8 +149,8 @@ public class NotificationServiceImpl implements NotificationService {
             dto.setTitle(notification.getTitle());
             dto.setMessage(notification.getMessage());
             dto.setStatus(notification.getStatus());
-            dto.setDeliveredAt(notification.getSentAt());
-            dto.setReadAt(notification.getReadAt());
+            dto.setDeliveredAt(notification.getSentAt() != null ? notification.getSentAt().toString() : null);
+            dto.setReadAt(notification.getReadAt() != null ? notification.getReadAt().toString() : null);
             dto.setActionUrl(notification.getActionUrl());
             return dto;
         }).collect(Collectors.toList());
@@ -170,8 +170,8 @@ public class NotificationServiceImpl implements NotificationService {
                     dto.setTitle(notification.getTitle());
                     dto.setMessage(notification.getMessage());
                     dto.setStatus(notification.getStatus());
-                    dto.setReadAt(notification.getReadAt());
-                    return Optional.of(dto);
+                    dto.setReadAt(notification.getReadAt() != null ? notification.getReadAt().toString() : null);
+                    return dto;
                 });
     }
 
@@ -187,7 +187,7 @@ public class NotificationServiceImpl implements NotificationService {
                     dto.setTitle(notification.getTitle());
                     dto.setMessage(notification.getMessage());
                     dto.setStatus(notification.getStatus());
-                    return Optional.of(dto);
+                    return dto;
                 });
     }
 }

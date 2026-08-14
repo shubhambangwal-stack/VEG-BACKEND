@@ -96,6 +96,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- ===== Firebase Admin SDK (FCM) ===== -->
+        <dependency>
+            <groupId>com.google.firebase</groupId>
+            <artifactId>firebase-admin</artifactId>
+            <version>9.3.0</version>
+        </dependency>
+
         <!-- ===== Swagger / OpenAPI ===== -->
         <dependency>
             <groupId>org.springdoc</groupId>

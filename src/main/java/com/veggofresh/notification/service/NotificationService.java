@@ -8,6 +8,7 @@ import com.veggofresh.notification.dto.NotificationCountResponseDto;
 import com.veggofresh.notification.entity.Notification;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface NotificationService {
 
