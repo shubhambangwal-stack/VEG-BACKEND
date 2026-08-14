@@ -92,6 +92,12 @@ veggofresh:
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
 
+# ── FCM (Firebase Cloud Messaging) ────────────────────────
+fcm:
+  server:
+    # FCM legacy server key. Provide via FCM_SERVER_KEY env var in deployment.
+    key: ${FCM_SERVER_KEY:}
+
 # ── SpringDoc / Swagger ───────────────────────────────────
 springdoc:
   api-docs:
