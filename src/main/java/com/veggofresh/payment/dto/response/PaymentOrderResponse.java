@@ -8,43 +8,33 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.util.UUID;
 
-/**
- * Response returned after successfully creating a Razorpay payment order.
- *
- * <p>The frontend uses these fields to initialize the Razorpay JS checkout:
- * <pre>
- * var options = {
- *   key:      response.keyId,
- *   amount:   response.amountInPaise,
- *   currency: response.currency,
- *   order_id: response.razorpayOrderId,
- *   ...
- * };
- * var rzp = new Razorpay(options);
- * rzp.open();
- * </pre>
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentOrderResponse {
 
-    /** The VegGoFresh order ID (PAYMENT_PENDING state). Frontend needs this for verifyPayment(). */
+    /** The VegGoFresh order ID (PAYMENT_PENDING state). */
     private UUID veggoOrderId;
 
-    /** Razorpay order ID (format: {@code order_XXXX}). Pass to Razorpay JS SDK as {@code order_id}. */
+    /** Razorpay order ID (format: order_XXXX). Null if fully wallet-covered. */
     private String razorpayOrderId;
 
-    /** Amount in INR (human-readable). For display purposes. */
+    /** Total order amount in INR. */
     private BigDecimal amount;
 
-    /** Amount in paise (INR × 100). Pass directly to Razorpay JS SDK as {@code amount}. */
+    /** Amount charged to Razorpay in paise (after wallet deduction). */
     private long amountInPaise;
 
-    /** Currency code, e.g. {@code INR}. */
+    /** Amount covered from the user wallet (INR). */
+    private BigDecimal walletAmountUsed;
+
+    /** Amount the user still needs to pay via Razorpay (INR). */
+    private BigDecimal razorpayAmountToPay;
+
+    /** Currency code, e.g. INR. */
     private String currency;
 
-    /** Razorpay publishable API key ID. Pass to Razorpay JS SDK as {@code key}. */
+    /** Razorpay publishable key ID for the JS SDK. */
     private String keyId;
 }

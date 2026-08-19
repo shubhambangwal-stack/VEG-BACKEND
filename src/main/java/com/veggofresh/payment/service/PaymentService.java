@@ -6,70 +6,52 @@ import com.veggofresh.payment.dto.response.PaymentOrderResponse;
 import com.veggofresh.payment.dto.response.PaymentVerifyResponse;
 import com.veggofresh.payment.entity.Payment;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
 public interface PaymentService {
 
     /**
-     * Creates a Razorpay payment order and a VegGoFresh order in PAYMENT_PENDING state.
-     *
-     * <p>Steps:
-     * <ol>
-     *   <li>Validate cart is non-empty</li>
-     *   <li>Compute order total (same as checkout summary)</li>
-     *   <li>Call Razorpay API to create an order</li>
-     *   <li>Persist a {@code Payment(CREATED)} row</li>
-     *   <li>Persist a VegGoFresh {@code Order(PAYMENT_PENDING)} row</li>
-     *   <li>Return {@code PaymentOrderResponse} with Razorpay order ID + amount for frontend</li>
-     * </ol>
-     *
-     * @param userId  authenticated customer ID
-     * @param request address, slot, and date for the order
-     * @return Razorpay order details for frontend to open checkout popup
+     * Step 1 of checkout: creates a Razorpay order with payment_capture=0 (Hold/Authorize mode)
+     * and a VegGoFresh order in PAYMENT_PENDING state.
      */
     PaymentOrderResponse createPaymentOrder(UUID userId, CreatePaymentOrderRequest request);
 
     /**
-     * Verifies Razorpay payment signature and places the VegGoFresh order.
-     *
-     * <p>Steps:
-     * <ol>
-     *   <li>Load {@code Payment} by {@code razorpayOrderId}</li>
-     *   <li>HMAC-SHA256 verify: {@code razorpay_order_id + "|" + razorpay_payment_id} against keySecret</li>
-     *   <li>Update Payment to CAPTURED, store payment ID + signature</li>
-     *   <li>Move VegGoFresh order from PAYMENT_PENDING → PLACED</li>
-     *   <li>Clear cart</li>
-     *   <li>Return order response</li>
-     * </ol>
-     *
-     * @param userId  authenticated customer ID
-     * @param request Razorpay IDs and signature from frontend
-     * @return placed order details
-     * @throws com.veggofresh.platform.exception.BusinessException PAYMENT_SIGNATURE_INVALID on mismatch
+     * Step 2 of checkout: verifies HMAC signature from Razorpay frontend callback.
+     * Moves Payment to AUTHORIZED state. Order stays PAYMENT_PENDING until vendor accepts.
      */
     PaymentVerifyResponse verifyPayment(UUID userId, VerifyPaymentRequest request);
 
     /**
+     * Called when a Vendor accepts an order.
+     * Triggers Razorpay Capture API and finalizes wallet reservation.
+     * Moves order PAYMENT_PENDING -> PLACED.
+     */
+    void capturePayment(UUID orderId, UUID vendorUserId, BigDecimal deliveryFee, BigDecimal commissionPercent);
+
+    /**
+     * Called when vendor-accept timeout expires.
+     * Voids the Razorpay hold and releases customer wallet reservation.
+     * Moves order PAYMENT_PENDING -> CANCELLED.
+     */
+    void voidPayment(UUID orderId);
+
+    /**
+     * Called when order is marked DELIVERED.
+     * Credits Vendor, Delivery, and Admin wallets with their respective shares.
+     */
+    void settleOrderToWallets(UUID orderId, UUID vendorUserId, UUID deliveryUserId,
+                              UUID adminUserId, BigDecimal vendorEarnings,
+                              BigDecimal deliveryEarnings, BigDecimal adminCommission);
+
+    /**
      * Handles Razorpay webhook events idempotently.
-     *
-     * <p>Supported events:
-     * <ul>
-     *   <li>{@code payment.captured} — moves order to PLACED if not already done</li>
-     *   <li>{@code payment.failed}   — marks Payment FAILED, order stays PAYMENT_PENDING</li>
-     * </ul>
-     *
-     * <p>The {@code X-Razorpay-Signature} header is verified before any processing.
-     * Duplicate events (same payment already CAPTURED) are silently ignored.
-     *
-     * @param payload   raw JSON body from Razorpay webhook
-     * @param signature value of {@code X-Razorpay-Signature} header
+     * Supported: payment.authorized, payment.captured, payment.failed.
      */
     void handleWebhook(String payload, String signature);
 
-    /**
-     * Returns all payment attempts for a given VegGoFresh order.
-     * Used by the customer to see payment history (retry attempts etc.)
-     */
+    /** Returns all payment attempts for a given VegGoFresh order. */
     List<Payment> getPaymentsByOrder(UUID orderId, UUID userId);
 }

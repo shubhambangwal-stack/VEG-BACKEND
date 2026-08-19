@@ -14,7 +14,7 @@ public interface CatalogProductRepository extends JpaRepository<CatalogProduct, 
     boolean existsByNameIgnoreCaseAndSubcategoryId(String name, UUID subcategoryId);
 
     @Query("SELECT p FROM CatalogProduct p WHERE " +
-           "(:search IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+           "(:search IS NULL OR LOWER(p.name) LIKE :search) AND " +
            "(:categoryId IS NULL OR p.category.id = :categoryId) AND " +
            "(:subcategoryId IS NULL OR p.subcategory.id = :subcategoryId)")
     Page<CatalogProduct> search(@Param("search") String search,

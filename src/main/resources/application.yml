@@ -94,13 +94,9 @@ veggofresh:
 
   # ── Razorpay Payment Gateway ──────────────────────────────
   razorpay:
-    # Test-mode keys from https://dashboard.razorpay.com/app/keys
-    # Override via env vars in all environments. Never commit real keys.
-    key-id: ${RAZORPAY_KEY_ID:rzp_test_PLACEHOLDER}
-    key-secret: ${RAZORPAY_KEY_SECRET:PLACEHOLDER_SECRET}
-    # Webhook secret from https://dashboard.razorpay.com/app/webhooks
-    # This is DIFFERENT from key-secret — set separately in Razorpay dashboard.
-    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:PLACEHOLDER_WEBHOOK_SECRET}
+    key-id: ${RAZORPAY_KEY_ID:rzp_test_TPA0H9AG1XtvJP}
+    key-secret: ${RAZORPAY_KEY_SECRET:1Jjtc0zvz4BfVNWmNIPIWr5I}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:vG#9K$pL2qX@mY7nZ!3wC6vB*8rJ^5hT}
     currency: INR
 
 # ── SpringDoc / Swagger ───────────────────────────────────

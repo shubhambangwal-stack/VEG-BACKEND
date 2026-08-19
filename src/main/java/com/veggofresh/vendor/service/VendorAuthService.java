@@ -1,4 +1,4 @@
-package com.veggofresh.vendor.service;
+ package com.veggofresh.vendor.service;
 
 import com.veggofresh.vendor.dto.request.VendorLoginRequestDto;
 import com.veggofresh.vendor.dto.request.VendorRegisterRequestDto;

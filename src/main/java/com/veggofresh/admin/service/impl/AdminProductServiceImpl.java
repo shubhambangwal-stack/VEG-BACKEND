@@ -87,7 +87,7 @@ public class AdminProductServiceImpl implements AdminProductService {
     @Override
     @Transactional(readOnly = true)
     public Page<ProductResponseDto> searchProducts(String search, UUID categoryId, UUID subcategoryId, Pageable pageable) {
-        String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        String normalizedSearch = (search != null && !search.isBlank()) ? "%" + search.trim().toLowerCase() + "%" : null;
         return productRepository.search(normalizedSearch, categoryId, subcategoryId, pageable)
                 .map(this::toDto);
     }

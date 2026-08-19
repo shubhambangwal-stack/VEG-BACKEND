@@ -36,4 +36,12 @@ public class CreatePaymentOrderRequest {
      * Optional scheduled delivery date in ISO format (e.g. "2026-08-15").
      */
     private String scheduledDate;
+
+    /**
+     * If true, the customer's wallet balance will be applied first (sequentially),
+     * and Razorpay will only be charged for the remaining amount.
+     * Default: false.
+     */
+    private Boolean useWallet = false;
 }
+
