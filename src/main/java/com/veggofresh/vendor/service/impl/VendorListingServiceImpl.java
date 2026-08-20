@@ -81,23 +81,43 @@ public class VendorListingServiceImpl implements VendorListingService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<VendorListingDto> getMyListings(UUID ownerUserId) {
+    public Page<VendorListingDto> getMyListings(UUID ownerUserId, Boolean isListedFilter, Pageable pageable) {
         Shop shop = requireShop(ownerUserId);
 
-        return vendorListingRepository.findByShopId(shop.getId()).stream()
-                .filter(VendorListing::isListed)
+        Page<VendorListing> listingsPage = vendorListingRepository.findByShopIdAndOptionalListedStatus(
+                shop.getId(), isListedFilter, pageable);
+
+        List<VendorListingDto> content = listingsPage.getContent().stream()
                 .map(listing -> {
                     // Individual failures (e.g. Admin deactivated/removed the item since
                     // listing) shouldn't break the whole screen -- skip silently.
                     try {
                         ProductResponseDto p = adminProductService.getProductById(listing.getCatalogProductId());
-                        return toDto(p, shop.getId(), true);
+                        return toDto(p, shop.getId(), listing.isListed());
                     } catch (Exception e) {
                         return null;
                     }
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
+
+        return new PageImpl<>(content, pageable, listingsPage.getTotalElements());
+    }
+
+    @Override
+    public void deleteListing(UUID ownerUserId, UUID catalogProductId) {
+        Shop shop = requireShop(ownerUserId);
+
+        VendorListing listing = vendorListingRepository.findByShopIdAndCatalogProductId(shop.getId(), catalogProductId)
+                .orElseThrow(() -> new BusinessException("VENDOR_LISTING_NOT_FOUND",
+                        "You haven't added this product to your storefront", HttpStatus.NOT_FOUND));
+
+        // Soft delete -- entity's @Where(deleted_at IS NULL) means this row becomes
+        // invisible everywhere from this point on (mine, the isListed lookup used by
+        // browseCatalog/setListed, etc). Works the same whether the item is currently
+        // listed or unlisted; no separate unlist step required first.
+        listing.softDelete();
+        vendorListingRepository.save(listing);
     }
 
     private VendorListingDto toDto(ProductResponseDto p, UUID shopId) {

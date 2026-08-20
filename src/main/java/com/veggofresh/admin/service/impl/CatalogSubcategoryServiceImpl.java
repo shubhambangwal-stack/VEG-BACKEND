@@ -9,6 +9,8 @@ import com.veggofresh.admin.repository.CatalogSubcategoryRepository;
 import com.veggofresh.admin.service.CatalogSubcategoryService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -70,6 +72,15 @@ public class CatalogSubcategoryServiceImpl implements CatalogSubcategoryService 
         Sort sort = Sort.by(Sort.Direction.ASC, "displayOrder");
         return subcategoryRepository.findAllByCategoryId(categoryId, sort)
                 .stream().map(this::toDto).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<SubcategoryResponseDto> searchActiveSubcategories(UUID categoryId, String search, Pageable pageable) {
+        String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        // Consistent with product/category search: an unknown-but-valid categoryId
+        // returns an empty page (200), not a 404 -- no existence check here.
+        return subcategoryRepository.searchActiveByCategory(categoryId, normalizedSearch, pageable).map(this::toDto);
     }
 
     @Override

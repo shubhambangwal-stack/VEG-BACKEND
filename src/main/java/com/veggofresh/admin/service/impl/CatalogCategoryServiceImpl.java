@@ -7,6 +7,8 @@ import com.veggofresh.admin.repository.CatalogCategoryRepository;
 import com.veggofresh.admin.service.CatalogCategoryService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,13 @@ public class CatalogCategoryServiceImpl implements CatalogCategoryService {
                 ? categoryRepository.findAll(sort)
                 : categoryRepository.findAllByIsActiveTrue(sort);
         return categories.stream().map(this::toDto).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<CategoryResponseDto> searchActiveCategories(String search, Pageable pageable) {
+        String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        return categoryRepository.searchActive(normalizedSearch, pageable).map(this::toDto);
     }
 
     @Override
