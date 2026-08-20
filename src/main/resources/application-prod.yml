@@ -14,7 +14,7 @@ spring:
   jpa:
     show-sql: false
   flyway:
-    out-of-order: false
+    out-of-order: true
 
 server:
   port: ${SERVER_PORT:8080}
