@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/veggofresh_local
     username: postgres
-    password: postgres
+    password: 123456
     driver-class-name: org.postgresql.Driver     # ← Add this line (Very Important)
 
   jpa:
@@ -21,7 +21,7 @@ spring:
 
   flyway:
     enabled: true
-    out-of-order: false
+    out-of-order: true
 
 logging:
   level:

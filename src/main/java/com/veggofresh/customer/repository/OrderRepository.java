@@ -27,9 +27,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     // PROJECT_STATE, deliberately left alone until the catalog rework lands,
     // since fixing it properly means rethinking what "shopId" even means
     // once products aren't vendor-owned. See NOTES_CUSTOMER.md.
+      
     @Query("SELECT DISTINCT o FROM Order o JOIN o.items i, VendorListing vl " +
            "WHERE i.productId = vl.catalogProductId AND vl.shop.id = :shopId")
     List<Order> findByShopId(@Param("shopId") UUID shopId);
+
+
+  
 
     Page<Order> findByUserIdAndStatus(UUID userId, OrderStatus status, Pageable pageable);
 

@@ -30,6 +30,10 @@ public class DeliveryPartnerProfile extends BaseEntity {
     @Column(name = "kyc_status", nullable = false, length = 50)
     private DeliveryKycStatus kycStatus = DeliveryKycStatus.PENDING;
 
+    /** NEW THIS ROUND -- set by DeliveryKycServiceImpl.rejectKyc(). Null unless kycStatus == REJECTED. */
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     @Column(name = "is_online", nullable = false)
     private boolean online = false;
 

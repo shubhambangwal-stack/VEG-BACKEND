@@ -26,6 +26,18 @@ public interface CustomerOrderService {
     void markDelivered(UUID orderId, String deliveryPhotoUrl, String locationNote);
 
     /**
+     * NEW THIS ROUND -- system-initiated cancellation, called by Delivery (re-broadcast
+     * limit hit) or, once built, Vendor's own broadcast leg. Unlike the customer-facing
+     * cancelOrder(userId, orderId), this is NOT restricted to PLACED/CONFIRMED status and
+     * does NOT check order ownership by a specific customer -- the caller is a system
+     * process reacting to a broadcast failure, not a user clicking cancel. Still performs
+     * the same wallet refund as customer-initiated cancellation. Safe to call on an
+     * already-terminal order (DELIVERED/CANCELLED) -- becomes a no-op rather than
+     * throwing, since the caller (a background sweep) shouldn't need to pre-check state.
+     */
+    void cancelOrderSystemInitiated(UUID orderId, String reason);
+
+    /**
      * LEGACY — do not switch to this. Weak hashCode-derived OTP, no expiry,
      * no attempt limit. Kept only because it's a named interface method
      * something might still call; Delivery's own real OTP system (random,

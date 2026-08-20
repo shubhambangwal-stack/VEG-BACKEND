@@ -1,5 +1,6 @@
 package com.veggofresh.delivery.controller;
 
+import com.veggofresh.delivery.dto.request.CancelAssignmentRequestDto;
 import com.veggofresh.delivery.dto.request.OtpVerifyRequestDto;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
 import com.veggofresh.delivery.dto.response.ProofOfDeliveryResponseDto;
@@ -71,6 +72,14 @@ public class DeliveryOrderController {
         return ResponseEntity.ok(ApiResponse.success(assignment, "Assignment rejected"));
     }
 
+    /** NEW THIS ROUND -- cancel-after-accept, previously didn't exist at all. Only valid from ACCEPTED or ARRIVED_AT_STORE. */
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> cancel(
+            @PathVariable UUID id, @Valid @RequestBody CancelAssignmentRequestDto request) {
+        var assignment = deliveryAssignmentService.cancelAssignment(SecurityUtils.getCurrentUserId(), id, request.getReason());
+        return ResponseEntity.ok(ApiResponse.success(assignment, "Assignment cancelled"));
+    }
+
     @PutMapping("/{id}/arrived-at-store")
     public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> arrivedAtStore(@PathVariable UUID id) {
         var assignment = deliveryAssignmentService.markArrivedAtStore(SecurityUtils.getCurrentUserId(), id);
@@ -81,6 +90,13 @@ public class DeliveryOrderController {
     public ResponseEntity<ApiResponse<DeliveryAssignmentResponseDto>> pickup(@PathVariable UUID id) {
         var assignment = deliveryAssignmentService.markPickedUp(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(assignment, "Order marked as picked up"));
+    }
+
+    /** NEW THIS ROUND -- verifies the vendor-issued pickup OTP. Must succeed before pickup() above will. */
+    @PostMapping("/{id}/verify-pickup-otp")
+    public ResponseEntity<ApiResponse<Void>> verifyPickupOtp(@PathVariable UUID id, @Valid @RequestBody OtpVerifyRequestDto request) {
+        deliveryAssignmentService.verifyPickupOtp(SecurityUtils.getCurrentUserId(), id, request.getOtp());
+        return ResponseEntity.ok(ApiResponse.success("Pickup OTP verified successfully"));
     }
 
     @PutMapping("/{id}/arrived-at-drop")
@@ -103,8 +119,9 @@ public class DeliveryOrderController {
         return ResponseEntity.ok(ApiResponse.success(proof, "Proof of delivery submitted"));
     }
 
-    @PostMapping("/{id}/verify-otp")
-    public ResponseEntity<ApiResponse<Void>> verifyOtp(@PathVariable UUID id, @Valid @RequestBody OtpVerifyRequestDto request) {
+    /** RENAMED THIS ROUND from /verify-otp to /verify-drop-otp -- for symmetry now that /verify-pickup-otp also exists. Behavior unchanged, path changed deliberately for clarity (same judgment call as Customer's /cart -> /carts rename). */
+    @PostMapping("/{id}/verify-drop-otp")
+    public ResponseEntity<ApiResponse<Void>> verifyDropOtp(@PathVariable UUID id, @Valid @RequestBody OtpVerifyRequestDto request) {
         deliveryAssignmentService.verifyDeliveryOtp(SecurityUtils.getCurrentUserId(), id, request.getOtp());
         return ResponseEntity.ok(ApiResponse.success("OTP verified successfully"));
     }

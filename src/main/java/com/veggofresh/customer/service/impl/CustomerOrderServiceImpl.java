@@ -6,6 +6,8 @@ import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.customer.service.OrderService;
+import com.veggofresh.payment.service.WalletService;
+import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
 
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final OrderResponseMapper orderResponseMapper;
+    private final WalletService walletService;
 
     @Override
     public void acceptOrder(UUID orderId) {
@@ -87,6 +90,34 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
         order.setDeliveredAt(Instant.now());
         order.setStatus(OrderStatus.DELIVERED);
         orderRepository.save(order);
+    }
+
+    /**
+     * NEW THIS ROUND -- called by Delivery when a re-broadcast limit is hit (see
+     * DeliveryAssignmentServiceImpl.reassign()). Deliberately more permissive than the
+     * customer-facing cancelOrder(): no ownership check (system caller, not a specific
+     * customer), no status-range restriction (a re-broadcast limit can be hit from
+     * READY_FOR_PICKUP or OUT_FOR_DELIVERY, not just PLACED/CONFIRMED). Already-terminal
+     * orders are a silent no-op rather than an error, since the caller is a background
+     * process that shouldn't need to pre-check state before calling this.
+     */
+    @Override
+    public void cancelOrderSystemInitiated(UUID orderId, String reason) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
+
+        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("cancelOrderSystemInitiated no-op for order {} -- already terminal ({})", orderId, order.getStatus());
+            return;
+        }
+
+        log.warn("System-initiated cancellation for order {}: {}", orderId, reason);
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(Instant.now());
+        Order saved = orderRepository.save(order);
+
+        walletService.credit(saved.getUserId(), saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
+                saved.getId(), reason);
     }
 
     @Override

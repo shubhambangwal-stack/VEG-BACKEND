@@ -35,6 +35,8 @@ import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.repository.RatingRepository;
 import com.veggofresh.customer.service.CartService;
 import com.veggofresh.customer.service.OrderService;
+import com.veggofresh.payment.service.WalletService;
+import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
@@ -88,6 +90,7 @@ public class OrderServiceImpl implements OrderService {
     private final CartService cartService;
     private final UserLookupService userLookupService;
     private final OrderResponseMapper orderResponseMapper;
+    private final WalletService walletService;
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
@@ -393,6 +396,14 @@ public class OrderServiceImpl implements OrderService {
         return orderResponseMapper.mapToDto(orderRepository.save(order));
     }
 
+    /**
+     * WALLET WIRING (this round): a cancelled order now actually refunds the
+     * customer -- order.getTotalAmount() is credited to their wallet. This applies
+     * regardless of whether real payment collection exists yet (it doesn't -- Payment/
+     * Razorpay integration is still unbuilt) so that the wallet ledger is already
+     * correct and ready the moment checkout starts taking real payments. See
+     * NOTES_CUSTOMER.md and Payment module's NOTES_PAYMENT.md for the full reasoning.
+     */
     @Override
     public OrderResponseDto cancelOrder(UUID userId, UUID orderId) {
         Order order = orderRepository.findByIdAndUserId(orderId, userId)
@@ -404,7 +415,12 @@ public class OrderServiceImpl implements OrderService {
 
         order.setStatus(OrderStatus.CANCELLED);
         order.setCancelledAt(Instant.now());
-        return orderResponseMapper.mapToDto(orderRepository.save(order));
+        Order saved = orderRepository.save(order);
+
+        walletService.credit(userId, saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
+                saved.getId(), "Refund for cancelled order " + saved.getOrderNumber());
+
+        return orderResponseMapper.mapToDto(saved);
     }
 
     @Override

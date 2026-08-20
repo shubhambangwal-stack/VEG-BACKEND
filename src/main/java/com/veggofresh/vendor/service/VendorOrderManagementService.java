@@ -5,6 +5,9 @@ import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.customer.dto.response.OrderItemResponseDto;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.service.CustomerOrderService;
+import com.veggofresh.delivery.dto.VendorDeliveryStatusDto;
+import com.veggofresh.delivery.service.DeliveryDispatchService;
+import com.veggofresh.delivery.service.DeliveryPickupInfoService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.response.VendorOrderDetailResponseDto;
 import com.veggofresh.vendor.dto.response.VendorOrderItemDto;
@@ -22,6 +25,11 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * EXTENDED THIS ROUND -- the "mark ready for pickup" trigger (the whole point of the
+ * Vendor round, per PROJECT_STATE sections 3/4), plus pickup-OTP and delivery-status
+ * visibility. Full detail in NOTES_VENDOR.md.
+ */
 @Service
 @RequiredArgsConstructor
 public class VendorOrderManagementService {
@@ -34,6 +42,8 @@ public class VendorOrderManagementService {
     private final ShopRepository shopRepository;
     private final VendorListingRepository vendorListingRepository;
     private final UserLookupService userLookupService;
+    private final DeliveryDispatchService deliveryDispatchService;
+    private final DeliveryPickupInfoService deliveryPickupInfoService;
 
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getShopOrders(UUID ownerUserId) {
@@ -51,11 +61,7 @@ public class VendorOrderManagementService {
     @Transactional(readOnly = true)
     public VendorOrderDetailResponseDto getOrderDetail(UUID ownerUserId, UUID orderId) {
         Shop shop = requireShop(ownerUserId);
-
-        OrderResponseDto order = customerOrderService.getOrdersByShopId(shop.getId()).stream()
-                .filter(o -> o.getId().equals(orderId))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException("VENDOR_ORDER_NOT_FOUND", "Order not found for this shop", HttpStatus.NOT_FOUND));
+        OrderResponseDto order = requireShopOrder(shop, orderId);
 
         List<VendorOrderItemDto> shopItems = order.getItems().stream()
                 .filter(item -> belongsToShop(item, shop.getId()))
@@ -108,9 +114,68 @@ public class VendorOrderManagementService {
         customerOrderService.updateOrderStatus(orderId, status);
     }
 
+    /**
+     * NEW THIS ROUND -- the real dispatch trigger. Previously nothing in Vendor called
+     * DeliveryDispatchService at all (only DeliveryTestController's /test/dispatch
+     * exercised it). This is the vendor physically finishing prep and handing off to
+     * delivery: flips the order to READY_FOR_PICKUP (new OrderStatus value -- see
+     * Customer's OrderStatus.java), then dispatches to Delivery, which broadcasts to
+     * eligible partners within Admin's configured radius of THIS shop's location and
+     * issues the pickup OTP once someone accepts (see Delivery's NOTES_DELIVERY.md).
+     */
+    @Transactional
+    public String markReadyForPickup(UUID ownerUserId, UUID orderId) {
+        Shop shop = requireShop(ownerUserId);
+        OrderResponseDto order = requireShopOrder(shop, orderId);
+
+        if (shop.getLatitude() == null || shop.getLongitude() == null) {
+            throw new BusinessException("VENDOR_SHOP_LOCATION_MISSING",
+                    "Your shop's location isn't set -- update your shop profile before marking orders ready for pickup", HttpStatus.BAD_REQUEST);
+        }
+
+        // updateOrderStatus -> CustomerOrderService -> OrderService.updateOrderStatus
+        // already validates this transition via OrderStatus.isValidTransition -- throws
+        // INVALID_ORDER_STATE_TRANSITION on its own if the order isn't in a state this
+        // is legal from (CONFIRMED or PREPARING).
+        customerOrderService.updateOrderStatus(orderId, "READY_FOR_PICKUP");
+
+        deliveryDispatchService.dispatchOrder(orderId, order.getUserId(), ownerUserId, shop.getName(), shop.getAddress(),
+                shop.getLatitude(), shop.getLongitude(), order.getLatitude(), order.getLongitude());
+
+        return "Order marked ready for pickup -- nearby delivery partners are being notified";
+    }
+
+    /**
+     * NEW THIS ROUND -- shows the vendor the pickup OTP they need to hand over once a
+     * delivery partner has accepted. Returns null (not an error) if nobody's accepted
+     * yet -- there's nothing to show, that's an expected state, not a failure.
+     */
+    @Transactional(readOnly = true)
+    public String getPickupOtp(UUID ownerUserId, UUID orderId) {
+        requireShop(ownerUserId);
+        return deliveryPickupInfoService.getPickupOtpForVendor(orderId, ownerUserId);
+    }
+
+    /**
+     * NEW THIS ROUND -- "where's my delivery" for the vendor's own order-detail screen,
+     * closing the gap where only Customer had any delivery-status visibility at all.
+     */
+    @Transactional(readOnly = true)
+    public VendorDeliveryStatusDto getDeliveryStatus(UUID ownerUserId, UUID orderId) {
+        requireShop(ownerUserId);
+        return deliveryPickupInfoService.getDeliveryStatusForVendor(orderId, ownerUserId);
+    }
+
     private Shop requireShop(UUID ownerUserId) {
         return shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
+    }
+
+    private OrderResponseDto requireShopOrder(Shop shop, UUID orderId) {
+        return customerOrderService.getOrdersByShopId(shop.getId()).stream()
+                .filter(o -> o.getId().equals(orderId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("VENDOR_ORDER_NOT_FOUND", "Order not found for this shop", HttpStatus.NOT_FOUND));
     }
 
     // NEW ARCHITECTURE: item.getProductId() is now a catalog product id --
