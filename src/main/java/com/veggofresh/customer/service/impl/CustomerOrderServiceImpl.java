@@ -12,6 +12,7 @@ import com.veggofresh.platform.exception.BusinessException;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,10 +39,35 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
 
+    /**
+     * FIXED THIS ROUND -- real atomic accept for the vendor-accept race. Previously
+     * delegated straight to orderService.updateOrderStatus(orderId, CONFIRMED), a plain
+     * read-then-write with no protection against two vendors genuinely racing to accept
+     * the same order (legitimate when candidateVendorIds holds more than one vendor --
+     * see OrderRepository.findByShopId's own comment for when that happens). Same
+     * pattern as Delivery's atomicClaim(): one conditional UPDATE, not a check-then-set;
+     * the loser gets a clean ORDER_ALREADY_ACCEPTED (409), not a silent double-accept or
+     * an unhandled exception.
+     */
     @Override
     public void acceptOrder(UUID orderId) {
         log.info("Accepting order {}", orderId);
-        orderService.updateOrderStatus(orderId, OrderStatus.CONFIRMED);
+
+        int claimed = orderRepository.atomicAccept(orderId, OrderStatus.CONFIRMED, OrderStatus.PLACED);
+        if (claimed > 0) {
+            return;
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
+
+        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.DELIVERED) {
+            throw new BusinessException("ORDER_NOT_ACCEPTABLE",
+                    "This order is no longer in a state that can be accepted", HttpStatus.BAD_REQUEST);
+        }
+        // Any other status means someone else's accept already won the race.
+        throw new BusinessException("ORDER_ALREADY_ACCEPTED",
+                "Someone else already accepted this order", HttpStatus.CONFLICT);
     }
 
     @Override

@@ -131,8 +131,9 @@ public class Order extends BaseEntity {
      * Vendor candidates re-validated fresh at checkout time. Every order has
      * exactly one vendor by construction (§3) — this set is the pool the
      * future simultaneous-broadcast + atomic-accept flow (owned by Vendor
-     * module) will broadcast to. Customer module's responsibility stops at
-     * handing off a validated candidate set; nothing reads this yet.
+     * module) will broadcast to. Now also the source of truth
+     * OrderRepository.findByShopId() reads from directly (fixed — see that
+     * query's own comment for the bug this closes).
      */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "order_candidate_vendors", joinColumns = @JoinColumn(name = "order_id"))
