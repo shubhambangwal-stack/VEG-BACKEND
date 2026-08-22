@@ -17,6 +17,7 @@ public class CartItemResponseDto {
     private UUID productId;
     private String productName;
     private BigDecimal unitPrice;
+    private String unit;
     private int quantity;
     private BigDecimal subTotal;
     private String productImageUrl;

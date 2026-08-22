@@ -135,6 +135,9 @@ public class VendorListingServiceImpl implements VendorListingService {
                 .categoryName(p.getCategoryName())
                 .subcategoryName(p.getSubcategoryName())
                 .price(p.getPrice())
+                .originalPrice(p.getOriginalPrice())
+                .unit(p.getUnit())
+                .discountPercent(p.getDiscountPercent())
                 .imageUrl(p.getImageUrl())
                 .isListed(isListed)
                 .build();

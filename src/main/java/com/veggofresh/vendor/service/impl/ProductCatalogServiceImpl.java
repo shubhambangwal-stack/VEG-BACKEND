@@ -4,10 +4,12 @@ import com.veggofresh.admin.dto.response.CategoryResponseDto;
 import com.veggofresh.admin.dto.response.ProductResponseDto;
 import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.admin.service.CatalogCategoryService;
+import com.veggofresh.admin.service.CatalogSubcategoryService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.CategoryDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
+import com.veggofresh.vendor.dto.SubcategoryDto;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorListing;
@@ -64,6 +66,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     private final AdminProductService adminProductService;
     private final CatalogCategoryService catalogCategoryService;
+    private final CatalogSubcategoryService catalogSubcategoryService;
     private final VendorListingRepository vendorListingRepository;
     private final ShopRepository shopRepository;
 
@@ -94,16 +97,36 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<ProductDto> searchProducts(String query, String category, Double minPrice, Double maxPrice,
-                                            double latitude, double longitude, Pageable pageable) {
-        UUID categoryId = resolveCategoryId(category);
-        if (category != null && !category.isBlank() && categoryId == null) {
-            // Named category doesn't exist in Admin's catalog at all -- no matches possible.
-            return new PageImpl<>(List.of(), pageable, 0);
-        }
+    public Page<CategoryDto> browseCategories(String search, Pageable pageable) {
+        return catalogCategoryService.searchActiveCategories(search, pageable)
+                .map(c -> CategoryDto.builder()
+                        .id(c.getId())
+                        .name(c.getName())
+                        .description(c.getDescription())
+                        .iconUrl(c.getImageUrl())
+                        .isActive(c.isActive())
+                        .build());
+    }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Page<SubcategoryDto> browseSubcategories(UUID categoryId, String search, Pageable pageable) {
+        return catalogSubcategoryService.searchActiveSubcategories(categoryId, search, pageable)
+                .map(s -> SubcategoryDto.builder()
+                        .id(s.getId())
+                        .categoryId(s.getCategoryId())
+                        .categoryName(s.getCategoryName())
+                        .name(s.getName())
+                        .isActive(s.isActive())
+                        .build());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ProductDto> searchProducts(String query, UUID categoryId, UUID subcategoryId, Double minPrice, Double maxPrice,
+                                            double latitude, double longitude, Pageable pageable) {
         Page<ProductResponseDto> candidates = adminProductService.searchProducts(
-                query, categoryId, null, PageRequest.of(0, OVERFETCH_SIZE));
+                query, categoryId, subcategoryId, PageRequest.of(0, OVERFETCH_SIZE));
 
         List<ProductDto> eligible = candidates.getContent().stream()
                 .filter(ProductResponseDto::isActive)
@@ -159,9 +182,19 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     @Override
     @Transactional(readOnly = true)
     public List<ProductDto> getDailyDeals(double latitude, double longitude) {
-        // Admin's CatalogProduct has no discount field yet -- deferred
-        // merchandising decision, see NOTES_VENDOR.md. Nothing to return.
-        return List.of();
+        Page<ProductResponseDto> candidates = adminProductService.searchProducts(
+                null, null, null, PageRequest.of(0, OVERFETCH_SIZE));
+
+        return candidates.getContent().stream()
+                .filter(ProductResponseDto::isActive)
+                // A "deal" = Admin has set a genuine discount (discountPercent is
+                // only non-null when originalPrice > price -- see AdminProductServiceImpl
+                // .computeDiscountPercent()).
+                .filter(p -> p.getDiscountPercent() != null)
+                .map(p -> toProductDtoIfEligible(p, latitude, longitude))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -215,15 +248,6 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
         return true;
     }
 
-    private UUID resolveCategoryId(String categoryName) {
-        if (categoryName == null || categoryName.isBlank()) return null;
-        return catalogCategoryService.listCategories(false).stream()
-                .filter(c -> c.getName().equalsIgnoreCase(categoryName.trim()))
-                .map(CategoryResponseDto::getId)
-                .findFirst()
-                .orElse(null);
-    }
-
     /**
      * Resolves eligibility for one catalog product and, if eligible, maps it
      * to the cross-module ProductDto shape, picking the nearest eligible shop
@@ -256,15 +280,17 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                 .id(product.getId())
                 .name(product.getName())
                 .price(product.getPrice())
+                .originalPrice(product.getOriginalPrice())
                 .description(product.getDescription())
                 .shopId(nearestEligible.getId())
                 .shopName(nearestEligible.getName())
                 .category(product.getCategoryName())
                 .imageUrl(product.getImageUrl())
-                // Merchandising fields not yet on CatalogProduct -- deferred decision, see NOTES_VENDOR.md.
-                .unit(null)
+                .unit(product.getUnit())
+                .discountPercent(product.getDiscountPercent())
+                // Not sourced from CatalogProduct -- separate, still-deferred
+                // merchandising decisions (see NOTES_VENDOR.md), left as-is.
                 .isBestSeller(false)
-                .discountPercent(null)
                 .badge(null)
                 .whyItsGreat(null)
                 .storageTips(null)

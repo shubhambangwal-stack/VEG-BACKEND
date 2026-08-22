@@ -186,6 +186,7 @@ public class OrderServiceImpl implements OrderService {
             orderItem.setProductId(item.getProductId());
             orderItem.setQuantity(item.getQuantity());
             orderItem.setPrice(product.getPrice());
+            orderItem.setUnit(product.getUnit());
             orderItems.add(orderItem);
 
             subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
@@ -315,6 +316,7 @@ public class OrderServiceImpl implements OrderService {
                             .productName(name)
                             .quantity(item.getQuantity())
                             .price(item.getPrice())
+                            .unit(item.getUnit())
                             .subTotal(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                             .build();
                 })
@@ -468,6 +470,7 @@ public class OrderServiceImpl implements OrderService {
                             .productName(name)
                             .quantity(item.getQuantity())
                             .unitPrice(item.getPrice())
+                            .unit(item.getUnit())
                             .subTotal(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                             .build();
                 })

@@ -45,6 +45,9 @@ public class AdminProductServiceImpl implements AdminProductService {
         product.setCategory(category);
         product.setSubcategory(subcategory);
         product.setPrice(request.getPrice());
+        validateOriginalPrice(request.getPrice(), request.getOriginalPrice());
+        product.setOriginalPrice(request.getOriginalPrice());
+        product.setUnit(request.getUnit());
         product.setImageUrl(request.getImageUrl());
         product.setActive(true);
         return toDto(productRepository.save(product));
@@ -70,6 +73,9 @@ public class AdminProductServiceImpl implements AdminProductService {
         product.setCategory(category);
         product.setSubcategory(subcategory);
         product.setPrice(request.getPrice());
+        validateOriginalPrice(request.getPrice(), request.getOriginalPrice());
+        product.setOriginalPrice(request.getOriginalPrice());
+        product.setUnit(request.getUnit());
         product.setImageUrl(request.getImageUrl());
         return toDto(productRepository.save(product));
     }
@@ -102,6 +108,18 @@ public class AdminProductServiceImpl implements AdminProductService {
         }
     }
 
+    /**
+     * Confirmed rule: reject an originalPrice that isn't strictly greater than
+     * price -- an equal or lower "was" price would show a nonsensical zero or
+     * negative discount badge on the browse screens.
+     */
+    private void validateOriginalPrice(java.math.BigDecimal price, java.math.BigDecimal originalPrice) {
+        if (originalPrice != null && originalPrice.compareTo(price) <= 0) {
+            throw new BusinessException("CATALOG_PRODUCT_INVALID_ORIGINAL_PRICE",
+                    "originalPrice must be greater than price", HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private CatalogProduct getEntity(UUID id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("CATALOG_PRODUCT_NOT_FOUND",
@@ -130,10 +148,29 @@ public class AdminProductServiceImpl implements AdminProductService {
                 .subcategoryId(p.getSubcategory().getId())
                 .subcategoryName(p.getSubcategory().getName())
                 .price(p.getPrice())
+                .originalPrice(p.getOriginalPrice())
+                .unit(p.getUnit())
+                .discountPercent(computeDiscountPercent(p.getPrice(), p.getOriginalPrice()))
                 .imageUrl(p.getImageUrl())
                 .isActive(p.isActive())
                 .createdAt(p.getCreatedAt())
                 .updatedAt(p.getUpdatedAt())
                 .build();
+    }
+
+    /**
+     * The single canonical place this is computed -- every downstream consumer
+     * (Vendor's ProductDto/VendorListingDto, Customer's browse screens) just
+     * copies this value across rather than recomputing it, so there's exactly
+     * one formula in the whole system to ever change.
+     */
+    private Integer computeDiscountPercent(java.math.BigDecimal price, java.math.BigDecimal originalPrice) {
+        if (originalPrice == null || price == null || originalPrice.compareTo(price) <= 0) {
+            return null;
+        }
+        java.math.BigDecimal diff = originalPrice.subtract(price);
+        return diff.multiply(java.math.BigDecimal.valueOf(100))
+                .divide(originalPrice, 0, java.math.RoundingMode.HALF_UP)
+                .intValue();
     }
 }

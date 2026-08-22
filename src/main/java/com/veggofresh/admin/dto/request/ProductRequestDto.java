@@ -29,5 +29,19 @@ public class ProductRequestDto {
     @Digits(integer = 8, fraction = 2)
     private BigDecimal price;
 
+    /**
+     * Optional "was" price for the strikethrough/discount badge. Omit or
+     * leave null for no discount. If provided, must be strictly greater
+     * than price -- validated in AdminProductServiceImpl (needs both fields
+     * together, so it can't live as a simple per-field annotation here).
+     */
+    @DecimalMin(value = "0.01", message = "originalPrice must be greater than 0")
+    @Digits(integer = 8, fraction = 2)
+    private BigDecimal originalPrice;
+
+    @NotBlank(message = "unit is required, e.g. '1 kg', '6 pcs'")
+    @Size(max = 100)
+    private String unit;
+
     private String imageUrl;
 }

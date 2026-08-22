@@ -3,6 +3,7 @@ package com.veggofresh.vendor.service;
 import com.veggofresh.vendor.dto.CategoryDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
+import com.veggofresh.vendor.dto.SubcategoryDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -20,21 +21,30 @@ import java.util.UUID;
  * this shop's own VendorListing (isListed=true) — not Vendor's old,
  * now-deleted Product entity.
  *
- * ⚠️ Every method below except getAllCategories now takes latitude/longitude.
- * A product/shop is only visible to a customer if at least one vendor with
- * an active listing for it is online, KYC-approved, AND within Admin's
- * configured delivery radius of that lat/long — "in range" is no longer
- * optional context, it's required to resolve almost anything here.
+ * ⚠️ Every method below except getAllCategories/browseCategories/
+ * browseSubcategories now takes latitude/longitude. A product/shop is only
+ * visible to a customer if at least one vendor with an active listing for it
+ * is online, KYC-approved, AND within Admin's configured delivery radius of
+ * that lat/long — "in range" is no longer optional context, it's required to
+ * resolve almost anything here.
  *
- * Customer's CustomerBrowseController, CartServiceImpl, and OrderServiceImpl
- * will need matching updates to pass real coordinates — NOT done as part of
- * this Vendor-only round. See NOTES_VENDOR.md, "Required Customer-side follow-up."
+ * ⚠️ CATEGORY FILTER BREAKING CHANGE (this round): searchProducts previously
+ * took a category NAME string, resolved via a fragile case-insensitive match.
+ * Now takes real categoryId/subcategoryId UUIDs, consistent with every other
+ * filter in the system (Admin, Vendor). Customer's frontend gets those UUIDs
+ * from browseCategories()/browseSubcategories() -- never types or guesses one.
  */
 public interface ProductCatalogService {
 
     List<ShopDto> browseNearbyShops(double latitude, double longitude);
 
-    Page<ProductDto> searchProducts(String query, String category, Double minPrice, Double maxPrice,
+    /** Paginated, searchable, active-only categories -- powers the customer category picker. */
+    Page<CategoryDto> browseCategories(String search, Pageable pageable);
+
+    /** Paginated, searchable, active-only subcategories under one category. */
+    Page<SubcategoryDto> browseSubcategories(UUID categoryId, String search, Pageable pageable);
+
+    Page<ProductDto> searchProducts(String query, UUID categoryId, UUID subcategoryId, Double minPrice, Double maxPrice,
                                      double latitude, double longitude, Pageable pageable);
 
     ProductDto getProductById(UUID catalogProductId, double latitude, double longitude);
@@ -42,9 +52,9 @@ public interface ProductCatalogService {
     List<ProductDto> getRelatedProducts(UUID catalogProductId, double latitude, double longitude);
 
     /**
-     * Currently always returns an empty list — Admin's CatalogProduct has no
-     * discount field yet (deferred merchandising decision). Kept in the
-     * interface so callers don't need to change again once that lands.
+     * NOW REAL (was always-empty before this round) -- returns eligible
+     * products where Admin has set an originalPrice genuinely higher than
+     * price (a real discount), radius-filtered the same as searchProducts.
      */
     List<ProductDto> getDailyDeals(double latitude, double longitude);
 
