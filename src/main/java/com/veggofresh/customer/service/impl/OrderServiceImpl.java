@@ -35,6 +35,8 @@ import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.repository.RatingRepository;
 import com.veggofresh.customer.service.CartService;
 import com.veggofresh.customer.service.OrderService;
+import com.veggofresh.payment.dto.PaymentHoldResponseDto;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
@@ -91,6 +93,7 @@ public class OrderServiceImpl implements OrderService {
     private final UserLookupService userLookupService;
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
+    private final PaymentService paymentService;
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
@@ -154,9 +157,25 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("CHECKOUT_FAILED", "None of your carts could be checked out — please review the issues", HttpStatus.BAD_REQUEST);
         }
 
+        // PAYMENT INTEGRATION: create a single Razorpay order (hold) covering all
+        // successfully checked-out orders. The frontend uses razorpayOrderId + razorpayKeyId
+        // to open Razorpay Checkout.js. After the user pays, they call
+        // POST /api/payment/orders/verify with the 3 values from Razorpay.
+        List<UUID> orderIds = createdOrders.stream()
+                .map(OrderResponseDto::getId)
+                .collect(Collectors.toList());
+        List<java.math.BigDecimal> orderAmounts = createdOrders.stream()
+                .map(OrderResponseDto::getTotalAmount)
+                .collect(Collectors.toList());
+        PaymentHoldResponseDto paymentHold = paymentService.createHold(userId, orderIds, orderAmounts);
+
+        log.info("Checkout complete: {} order(s) created, Razorpay order={}, total={}",
+                createdOrders.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
+
         return CheckoutResultDto.builder()
                 .orders(createdOrders)
                 .issues(issues)
+                .paymentHold(paymentHold)
                 .build();
     }
 

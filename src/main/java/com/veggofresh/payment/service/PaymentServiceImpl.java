@@ -1,0 +1,364 @@
+package com.veggofresh.payment.service;
+
+import com.veggofresh.admin.service.PlatformSettingsService;
+import com.veggofresh.payment.client.RazorpayClient;
+import com.veggofresh.payment.client.RazorpayPaymentStatus;
+import com.veggofresh.payment.dto.PaymentHoldResponseDto;
+import com.veggofresh.payment.dto.PaymentOrderLineAllocationDto;
+import com.veggofresh.payment.entity.PaymentOrder;
+import com.veggofresh.payment.entity.PaymentOrderLine;
+import com.veggofresh.payment.entity.PaymentOrderLineStatus;
+import com.veggofresh.payment.entity.PaymentOrderStatus;
+import com.veggofresh.payment.repository.PaymentOrderLineRepository;
+import com.veggofresh.payment.repository.PaymentOrderRepository;
+import com.veggofresh.platform.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Orchestrates Razorpay payment lifecycle: hold → verify → capture/void → settle.
+ *
+ * Key design decisions:
+ * 1. One Razorpay order per checkout() call (batch), not per Customer Order.
+ * 2. Capture happens exactly once per batch, for the sum of ACCEPTED lines, once
+ *    ALL lines resolve — because Razorpay only allows one capture per payment.
+ * 3. Void/cancellation before capture = no money ever collected; after capture = wallet credit.
+ * 4. Settlement (Phase 3) = virtual ledger split, no new Razorpay calls.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class PaymentServiceImpl implements PaymentService {
+
+    private final PaymentOrderRepository paymentOrderRepository;
+    private final PaymentOrderLineRepository paymentOrderLineRepository;
+    private final RazorpayClient razorpayClient;
+    private final WalletService walletService;
+    private final PlatformSettingsService platformSettingsService;
+    private final com.veggofresh.payment.config.RazorpayProperties razorpayProperties;
+
+    @Override
+    @Transactional
+    public PaymentHoldResponseDto createHold(UUID userId, List<UUID> orderIds, List<BigDecimal> orderAmounts) {
+        if (orderIds.isEmpty()) {
+            throw new BusinessException("PAYMENT_NO_ORDERS", "Cannot create a payment hold with no orders", HttpStatus.BAD_REQUEST);
+        }
+
+        BigDecimal total = orderAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // 1. Save the entity first with a dummy Razorpay ID to get the JVM UUID 
+        // without violating the NOT NULL constraint if Razorpay fails.
+        PaymentOrder paymentOrder = new PaymentOrder();
+        paymentOrder.setUserId(userId);
+        paymentOrder.setTotalAmount(total);
+        paymentOrder.setCurrency("INR");
+        paymentOrder.setStatus(PaymentOrderStatus.CREATED);
+        paymentOrder.setRazorpayOrderId("PENDING-" + UUID.randomUUID());
+        PaymentOrder saved = paymentOrderRepository.save(paymentOrder);
+
+        // 2. Call Razorpay with our actual DB ID
+        String razorpayOrderId = razorpayClient.createOrder(total, "INR", saved.getId().toString());
+
+        // 3. Update with the real Razorpay Order ID
+        saved.setRazorpayOrderId(razorpayOrderId);
+        paymentOrderRepository.save(saved);
+
+        List<PaymentOrderLineAllocationDto> allocations = new ArrayList<>();
+        for (int i = 0; i < orderIds.size(); i++) {
+            PaymentOrderLine line = new PaymentOrderLine();
+            line.setPaymentOrderId(saved.getId());
+            line.setOrderId(orderIds.get(i));
+            line.setAmount(orderAmounts.get(i));
+            line.setStatus(PaymentOrderLineStatus.PENDING);
+            paymentOrderLineRepository.save(line);
+
+            allocations.add(PaymentOrderLineAllocationDto.builder()
+                    .orderId(orderIds.get(i))
+                    .orderNumber("Order " + (i + 1))
+                    .amount(orderAmounts.get(i))
+                    .build());
+        }
+
+        log.info("Payment hold created: paymentOrderId={} razorpayOrderId={} total={} orders={}",
+                saved.getId(), razorpayOrderId, total, orderIds.size());
+
+        return PaymentHoldResponseDto.builder()
+                .paymentOrderId(saved.getId())
+                .razorpayOrderId(razorpayOrderId)
+                .razorpayKeyId(razorpayProperties.getKeyId())
+                .currency("INR")
+                .totalAmount(total)
+                .allocations(allocations)
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public PaymentHoldResponseDto createTopupHold(UUID userId, BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("INVALID_TOPUP_AMOUNT", "Top-up amount must be greater than zero", HttpStatus.BAD_REQUEST);
+        }
+
+        PaymentOrder paymentOrder = new PaymentOrder();
+        paymentOrder.setUserId(userId);
+        paymentOrder.setTotalAmount(amount);
+        paymentOrder.setCurrency("INR");
+        paymentOrder.setStatus(PaymentOrderStatus.CREATED);
+        paymentOrder.setTopup(true);
+        PaymentOrder saved = paymentOrderRepository.save(paymentOrder);
+
+        String razorpayOrderId = razorpayClient.createOrder(amount, "INR", saved.getId().toString());
+        saved.setRazorpayOrderId(razorpayOrderId);
+        paymentOrderRepository.save(saved);
+
+        return PaymentHoldResponseDto.builder()
+                .paymentOrderId(saved.getId())
+                .razorpayOrderId(razorpayOrderId)
+                .razorpayKeyId(razorpayProperties.getKeyId())
+                .currency("INR")
+                .totalAmount(amount)
+                .allocations(new ArrayList<>()) // No specific orders allocated
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void verifyPayment(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
+        // 1. Verify HMAC-SHA256 signature (Razorpay Checkout.js convention)
+        boolean signatureValid = razorpayClient.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+        if (!signatureValid) {
+            throw new BusinessException("PAYMENT_SIGNATURE_INVALID",
+                    "Payment signature verification failed -- this request may be forged", HttpStatus.BAD_REQUEST);
+        }
+
+        // 2. Cross-check with Razorpay (never trust frontend alone)
+        RazorpayPaymentStatus gatewayStatus = razorpayClient.fetchPaymentStatus(razorpayPaymentId);
+        if (!gatewayStatus.isAuthorized()) {
+            throw new BusinessException("PAYMENT_NOT_AUTHORIZED",
+                    "Payment is not in authorized state on Razorpay (status: " + gatewayStatus.status() + ")", HttpStatus.BAD_REQUEST);
+        }
+
+        // 3. Update our PaymentOrder
+        PaymentOrder paymentOrder = paymentOrderRepository.findByRazorpayOrderId(razorpayOrderId)
+                .orElseThrow(() -> new BusinessException("PAYMENT_ORDER_NOT_FOUND",
+                        "No payment order found for razorpayOrderId: " + razorpayOrderId, HttpStatus.NOT_FOUND));
+
+        if (paymentOrder.getStatus().isTerminal()) {
+            log.warn("verifyPayment called on already-terminal PaymentOrder {} (status={}), ignoring",
+                    paymentOrder.getId(), paymentOrder.getStatus());
+            return;
+        }
+
+        paymentOrder.setRazorpayPaymentId(razorpayPaymentId);
+        paymentOrder.setStatus(PaymentOrderStatus.AUTHORIZED);
+        paymentOrder.setAuthorizedAt(Instant.now());
+        paymentOrderRepository.save(paymentOrder);
+        
+        log.info("Payment verified and authorized: paymentOrderId={} razorpayPaymentId={}", paymentOrder.getId(), razorpayPaymentId);
+
+        // If it's a top-up, we auto-capture immediately (no vendor acceptance needed)
+        if (paymentOrder.isTopup()) {
+            log.info("Auto-capturing top-up paymentOrderId={}", paymentOrder.getId());
+            razorpayClient.capturePayment(razorpayPaymentId, paymentOrder.getTotalAmount(), paymentOrder.getCurrency());
+            
+            paymentOrder.setStatus(PaymentOrderStatus.CAPTURED);
+            paymentOrder.setCapturedAmount(paymentOrder.getTotalAmount());
+            paymentOrder.setCapturedAt(Instant.now());
+            paymentOrderRepository.save(paymentOrder);
+            
+            walletService.credit(
+                paymentOrder.getUserId(), 
+                paymentOrder.getTotalAmount(), 
+                WalletTransactionReason.WALLET_TOP_UP, 
+                paymentOrder.getId(), 
+                "Wallet top-up via Razorpay"
+            );
+            log.info("Top-up complete. Wallet credited for paymentOrderId={}", paymentOrder.getId());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void onOrderAccepted(UUID orderId) {
+        Optional<PaymentOrderLine> lineOpt = paymentOrderLineRepository.findByOrderId(orderId);
+        if (lineOpt.isEmpty()) {
+            // Payment integration not active for this order (e.g. legacy/test order)
+            log.debug("onOrderAccepted: no payment line for orderId={}, skipping", orderId);
+            return;
+        }
+
+        PaymentOrderLine line = lineOpt.get();
+        if (line.getStatus() != PaymentOrderLineStatus.PENDING) {
+            log.warn("onOrderAccepted: line for orderId={} is already {} -- idempotent no-op", orderId, line.getStatus());
+            return;
+        }
+
+        line.setStatus(PaymentOrderLineStatus.ACCEPTED);
+        line.setResolvedAt(Instant.now());
+        paymentOrderLineRepository.save(line);
+        log.info("PaymentOrderLine ACCEPTED for orderId={}", orderId);
+
+        tryCaptureIfBatchComplete(line.getPaymentOrderId());
+    }
+
+    @Override
+    @Transactional
+    public void onOrderVoided(UUID orderId) {
+        Optional<PaymentOrderLine> lineOpt = paymentOrderLineRepository.findByOrderId(orderId);
+        if (lineOpt.isEmpty()) {
+            log.debug("onOrderVoided: no payment line for orderId={}, skipping", orderId);
+            return;
+        }
+
+        PaymentOrderLine line = lineOpt.get();
+        if (line.getStatus() != PaymentOrderLineStatus.PENDING) {
+            log.warn("onOrderVoided: line for orderId={} is already {} -- idempotent no-op", orderId, line.getStatus());
+            return;
+        }
+
+        line.setStatus(PaymentOrderLineStatus.VOIDED);
+        line.setResolvedAt(Instant.now());
+        paymentOrderLineRepository.save(line);
+        log.info("PaymentOrderLine VOIDED for orderId={}", orderId);
+
+        tryCaptureIfBatchComplete(line.getPaymentOrderId());
+    }
+
+    @Override
+    @Transactional
+    public void onOrderCancelled(UUID orderId) {
+        Optional<PaymentOrderLine> lineOpt = paymentOrderLineRepository.findByOrderId(orderId);
+        if (lineOpt.isEmpty()) {
+            log.debug("onOrderCancelled: no payment line for orderId={}, skipping", orderId);
+            return;
+        }
+
+        PaymentOrderLine line = lineOpt.get();
+        PaymentOrder batch = paymentOrderRepository.findByIdForUpdate(line.getPaymentOrderId())
+                .orElseThrow(() -> new BusinessException("PAYMENT_ORDER_NOT_FOUND", "Parent payment order not found"));
+
+        boolean batchCaptured = batch.getStatus() == PaymentOrderStatus.CAPTURED
+                || batch.getStatus() == PaymentOrderStatus.PARTIALLY_CAPTURED;
+
+        if (!batchCaptured) {
+            // Not yet captured — void this line (no money was ever taken)
+            onOrderVoided(orderId);
+        } else {
+            // Already captured — credit refund back to customer wallet
+            if (line.getStatus() == PaymentOrderLineStatus.ACCEPTED
+                    || line.getStatus() == PaymentOrderLineStatus.PENDING) {
+                line.setStatus(PaymentOrderLineStatus.CANCELLED_REFUNDED);
+                line.setResolvedAt(Instant.now());
+                paymentOrderLineRepository.save(line);
+
+                walletService.credit(batch.getUserId(), line.getAmount(),
+                        WalletTransactionReason.ORDER_CANCELLED_POST_CAPTURE_REFUND,
+                        orderId, "Refund for cancelled order (post-capture)");
+                log.info("Post-capture refund credited: userId={} amount={} orderId={}",
+                        batch.getUserId(), line.getAmount(), orderId);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void onDeliveryCompleted(UUID orderId, BigDecimal orderSubtotal, BigDecimal deliveryFee,
+                                    UUID vendorUserId, UUID deliveryPartnerUserId) {
+        BigDecimal commissionPercent = platformSettingsService.getPlatformCommissionPercent();
+        BigDecimal platformCut = orderSubtotal
+                .multiply(commissionPercent)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal vendorShare = orderSubtotal.subtract(platformCut);
+
+        walletService.credit(vendorUserId, vendorShare,
+                WalletTransactionReason.ORDER_VENDOR_SETTLEMENT,
+                orderId, "Revenue from completed order (net of " + commissionPercent + "% platform commission)");
+
+        walletService.credit(deliveryPartnerUserId, deliveryFee,
+                WalletTransactionReason.ORDER_DELIVERY_SETTLEMENT,
+                orderId, "Delivery earnings for completed order");
+
+        walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, platformCut,
+                WalletTransactionReason.ORDER_PLATFORM_COMMISSION,
+                orderId, "Platform commission (" + commissionPercent + "%) on completed order");
+
+        log.info("Settlement complete: orderId={} vendorShare={} deliveryFee={} platformCut={}",
+                orderId, vendorShare, deliveryFee, platformCut);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PRIVATE HELPERS
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Called after every line resolution. If all lines for the batch have resolved,
+     * decides whether to capture (ACCEPTED lines exist) or mark as voided (all VOIDED).
+     * Uses a row-level lock on the PaymentOrder to prevent two concurrent line
+     * resolutions from both triggering capture.
+     */
+    private void tryCaptureIfBatchComplete(UUID paymentOrderId) {
+        PaymentOrder batch = paymentOrderRepository.findByIdForUpdate(paymentOrderId).orElse(null);
+        if (batch == null || batch.getStatus().isTerminal()) {
+            return;
+        }
+
+        List<PaymentOrderLine> allLines = paymentOrderLineRepository.findByPaymentOrderId(paymentOrderId);
+        boolean anyPending = allLines.stream().anyMatch(l -> l.getStatus() == PaymentOrderLineStatus.PENDING);
+        if (anyPending) {
+            return; // Batch not complete yet -- another vendor still needs to accept/reject
+        }
+
+        List<PaymentOrderLine> acceptedLines = allLines.stream()
+                .filter(l -> l.getStatus() == PaymentOrderLineStatus.ACCEPTED)
+                .collect(Collectors.toList());
+
+        if (acceptedLines.isEmpty()) {
+            // Every line was voided -- nothing to capture
+            batch.setStatus(PaymentOrderStatus.VOIDED);
+            paymentOrderRepository.save(batch);
+            log.info("All lines voided for paymentOrderId={} -- no capture needed", paymentOrderId);
+            return;
+        }
+
+        // At least one accepted -- capture the sum of accepted lines
+        if (batch.getRazorpayPaymentId() == null) {
+            log.warn("Batch {} ready to capture but razorpayPaymentId is null (customer may not have verified yet)", paymentOrderId);
+            return;
+        }
+
+        BigDecimal captureAmount = acceptedLines.stream()
+                .map(PaymentOrderLine::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        try {
+            RazorpayPaymentStatus captured = razorpayClient.capturePayment(
+                    batch.getRazorpayPaymentId(), captureAmount, batch.getCurrency());
+
+            batch.setCapturedAmount(captureAmount);
+            batch.setCapturedAt(Instant.now());
+            batch.setStatus(acceptedLines.size() == allLines.size()
+                    ? PaymentOrderStatus.CAPTURED
+                    : PaymentOrderStatus.PARTIALLY_CAPTURED);
+            paymentOrderRepository.save(batch);
+
+            log.info("Payment captured: paymentOrderId={} capturedAmount={} status={}",
+                    paymentOrderId, captureAmount, batch.getStatus());
+        } catch (Exception e) {
+            log.error("Razorpay capture FAILED for paymentOrderId={}: {}", paymentOrderId, e.getMessage(), e);
+            batch.setStatus(PaymentOrderStatus.FAILED);
+            paymentOrderRepository.save(batch);
+        }
+    }
+}
