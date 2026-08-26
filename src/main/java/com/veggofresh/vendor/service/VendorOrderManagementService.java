@@ -26,9 +26,13 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * EXTENDED THIS ROUND -- the "mark ready for pickup" trigger (the whole point of the
- * Vendor round, per PROJECT_STATE sections 3/4), plus pickup-OTP and delivery-status
- * visibility. Full detail in NOTES_VENDOR.md.
+ * REBUILT THIS ROUND -- the vendor-accept/reject broadcast redesign, matching
+ * CustomerOrderService's rebuild. Two genuinely different lists now exist:
+ * getOrderRequests (the broadcast inbox -- still-live candidates) and getShopOrders
+ * (real order history -- only orders THIS shop actually won). Confirmed via live
+ * testing that the old single-list model let a vendor who lost the accept race keep
+ * seeing and acting on an order they never won -- see NOTES_VENDOR.md for the full
+ * root-cause trace.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,18 +49,38 @@ public class VendorOrderManagementService {
     private final DeliveryDispatchService deliveryDispatchService;
     private final DeliveryPickupInfoService deliveryPickupInfoService;
 
+    /**
+     * NEW THIS ROUND -- the broadcast inbox. Every order still awaiting a decision
+     * that this shop can still act on (candidate, not yet accepted by anyone, hasn't
+     * rejected it themselves). This is where accept()/reject() are meant to be called
+     * from.
+     */
     @Transactional(readOnly = true)
-    public List<OrderResponseDto> getShopOrders(UUID ownerUserId) {
+    public List<OrderResponseDto> getOrderRequests(UUID ownerUserId) {
         Shop shop = requireShop(ownerUserId);
-        return customerOrderService.getOrdersByShopId(shop.getId());
+        return customerOrderService.getOrderRequestsForShop(shop.getId());
     }
 
     /**
-     * Enriched single-order view for the Figma "Order Details" screen. Items are
-     * FILTERED to only this shop's own products -- an order can span multiple
-     * vendors, so subtotal/fee/total below are scoped accordingly, not the full
-     * order's totalAmount. customerPhone resolved live via UserLookupService
-     * (no phone denormalization needed -- always fresh).
+     * CHANGED MEANING THIS ROUND -- this is now real order history only: orders this
+     * shop actually WON the accept race for. Previously returned every order this
+     * shop was ever a candidate for, which is the exact bug this round fixes -- a
+     * vendor who lost the race no longer sees the order here at all.
+     */
+    @Transactional(readOnly = true)
+    public List<OrderResponseDto> getShopOrders(UUID ownerUserId) {
+        Shop shop = requireShop(ownerUserId);
+        return customerOrderService.getAcceptedOrdersForShop(shop.getId());
+    }
+
+    /**
+     * Enriched single-order view for the Figma "Order Details" screen. Works for both
+     * a pending request (viewing detail before deciding) and an already-accepted order
+     * (management view) -- see requireShopOrder(). Items are FILTERED to only this
+     * shop's own products -- an order can span multiple vendors, so subtotal/fee/total
+     * below are scoped accordingly, not the full order's totalAmount. customerPhone
+     * resolved live via UserLookupService (no phone denormalization needed -- always
+     * fresh).
      */
     @Transactional(readOnly = true)
     public VendorOrderDetailResponseDto getOrderDetail(UUID ownerUserId, UUID orderId) {
@@ -96,21 +120,31 @@ public class VendorOrderManagementService {
                 .build();
     }
 
+    /** BREAKING CHANGE THIS ROUND: acceptOrder now passes shop.getId() through -- CustomerOrderService.acceptOrder requires it to record who won the race. */
     @Transactional
     public void acceptOrder(UUID ownerUserId, UUID orderId) {
-        requireShop(ownerUserId);
-        customerOrderService.acceptOrder(orderId);
+        Shop shop = requireShop(ownerUserId);
+        customerOrderService.acceptOrder(orderId, shop.getId());
     }
 
+    /**
+     * BREAKING CHANGE THIS ROUND: rejectOrder now passes shop.getId() through, and no
+     * longer cancels the whole order -- CustomerOrderService.rejectOrder narrows the
+     * candidate pool instead (see that method's own javadoc). This shop stops seeing
+     * the order in getOrderRequests either way; the order itself may stay live for
+     * other candidates.
+     */
     @Transactional
     public void rejectOrder(UUID ownerUserId, UUID orderId) {
-        requireShop(ownerUserId);
-        customerOrderService.rejectOrder(orderId);
+        Shop shop = requireShop(ownerUserId);
+        customerOrderService.rejectOrder(orderId, shop.getId());
     }
 
+    /** Only valid on orders this shop actually won -- see requireAcceptedShopOrder(). */
     @Transactional
     public void updateOrderStatus(UUID ownerUserId, UUID orderId, String status) {
-        requireShop(ownerUserId);
+        Shop shop = requireShop(ownerUserId);
+        requireAcceptedShopOrder(shop, orderId);
         customerOrderService.updateOrderStatus(orderId, status);
     }
 
@@ -118,25 +152,23 @@ public class VendorOrderManagementService {
      * NEW THIS ROUND -- the real dispatch trigger. Previously nothing in Vendor called
      * DeliveryDispatchService at all (only DeliveryTestController's /test/dispatch
      * exercised it). This is the vendor physically finishing prep and handing off to
-     * delivery: flips the order to READY_FOR_PICKUP (new OrderStatus value -- see
-     * Customer's OrderStatus.java), then dispatches to Delivery, which broadcasts to
-     * eligible partners within Admin's configured radius of THIS shop's location and
-     * issues the pickup OTP once someone accepts (see Delivery's NOTES_DELIVERY.md).
+     * delivery: flips the order to READY_FOR_PICKUP, then dispatches to Delivery,
+     * which broadcasts to eligible partners within Admin's configured radius of THIS
+     * shop's location and issues the pickup OTP once someone accepts (see Delivery's
+     * NOTES_DELIVERY.md). Scoped to accepted orders only -- requireAcceptedShopOrder
+     * throws if this shop never actually won the order (was only ever a candidate, or
+     * lost the accept race).
      */
     @Transactional
     public String markReadyForPickup(UUID ownerUserId, UUID orderId) {
         Shop shop = requireShop(ownerUserId);
-        OrderResponseDto order = requireShopOrder(shop, orderId);
+        OrderResponseDto order = requireAcceptedShopOrder(shop, orderId);
 
         if (shop.getLatitude() == null || shop.getLongitude() == null) {
             throw new BusinessException("VENDOR_SHOP_LOCATION_MISSING",
                     "Your shop's location isn't set -- update your shop profile before marking orders ready for pickup", HttpStatus.BAD_REQUEST);
         }
 
-        // updateOrderStatus -> CustomerOrderService -> OrderService.updateOrderStatus
-        // already validates this transition via OrderStatus.isValidTransition -- throws
-        // INVALID_ORDER_STATE_TRANSITION on its own if the order isn't in a state this
-        // is legal from (CONFIRMED or PREPARING).
         customerOrderService.updateOrderStatus(orderId, "READY_FOR_PICKUP");
 
         deliveryDispatchService.dispatchOrder(orderId, order.getUserId(), ownerUserId, shop.getName(), shop.getAddress(),
@@ -146,23 +178,21 @@ public class VendorOrderManagementService {
     }
 
     /**
-     * NEW THIS ROUND -- shows the vendor the pickup OTP they need to hand over once a
-     * delivery partner has accepted. Returns null (not an error) if nobody's accepted
-     * yet -- there's nothing to show, that's an expected state, not a failure.
+     * Shows the vendor the pickup OTP they need to hand over once a delivery partner
+     * has accepted. Returns null (not an error) if nobody's accepted yet.
      */
     @Transactional(readOnly = true)
     public String getPickupOtp(UUID ownerUserId, UUID orderId) {
-        requireShop(ownerUserId);
+        Shop shop = requireShop(ownerUserId);
+        requireAcceptedShopOrder(shop, orderId);
         return deliveryPickupInfoService.getPickupOtpForVendor(orderId, ownerUserId);
     }
 
-    /**
-     * NEW THIS ROUND -- "where's my delivery" for the vendor's own order-detail screen,
-     * closing the gap where only Customer had any delivery-status visibility at all.
-     */
+    /** "Where's my delivery" for the vendor's own order-detail screen. */
     @Transactional(readOnly = true)
     public VendorDeliveryStatusDto getDeliveryStatus(UUID ownerUserId, UUID orderId) {
-        requireShop(ownerUserId);
+        Shop shop = requireShop(ownerUserId);
+        requireAcceptedShopOrder(shop, orderId);
         return deliveryPickupInfoService.getDeliveryStatusForVendor(orderId, ownerUserId);
     }
 
@@ -171,8 +201,36 @@ public class VendorOrderManagementService {
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
     }
 
+    /**
+     * NEW THIS ROUND -- checks BOTH the pending-requests list and the accepted-orders
+     * list, since order detail is meant to be viewable either before deciding
+     * (accept/reject) or after winning it. Used by getOrderDetail() only -- anything
+     * that performs a real post-accept ACTION (mark ready for pickup, status update,
+     * pickup OTP, delivery status) must use requireAcceptedShopOrder() below instead,
+     * which is intentionally stricter.
+     */
     private OrderResponseDto requireShopOrder(Shop shop, UUID orderId) {
-        return customerOrderService.getOrdersByShopId(shop.getId()).stream()
+        var accepted = customerOrderService.getAcceptedOrdersForShop(shop.getId()).stream()
+                .filter(o -> o.getId().equals(orderId))
+                .findFirst();
+        if (accepted.isPresent()) {
+            return accepted.get();
+        }
+
+        return customerOrderService.getOrderRequestsForShop(shop.getId()).stream()
+                .filter(o -> o.getId().equals(orderId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("VENDOR_ORDER_NOT_FOUND", "Order not found for this shop", HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * NEW THIS ROUND -- strict version: only orders this shop actually WON. This is
+     * the check that fixes the root-cause bug -- a vendor who was merely a candidate
+     * (or who lost the accept race to someone else) gets VENDOR_ORDER_NOT_FOUND here,
+     * not a silently-successful action on an order that was never theirs.
+     */
+    private OrderResponseDto requireAcceptedShopOrder(Shop shop, UUID orderId) {
+        return customerOrderService.getAcceptedOrdersForShop(shop.getId()).stream()
                 .filter(o -> o.getId().equals(orderId))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException("VENDOR_ORDER_NOT_FOUND", "Order not found for this shop", HttpStatus.NOT_FOUND));

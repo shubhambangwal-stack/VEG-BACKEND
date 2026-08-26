@@ -21,10 +21,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Computes totalSales via CustomerOrderService.getOrdersByShopId(...) + local item
- * filtering by product ownership -- deliberately NOT importing Customer's Order entity
- * directly (unlike the still-unfixed VendorDashboardService/VendorReportService), to
- * avoid adding a third instance of that same boundary violation.
+ * FIXED THIS ROUND: totalSales now computed via
+ * CustomerOrderService.getAcceptedOrdersForShop(...) -- previously used the now-removed
+ * getOrdersByShopId(...), which (before the vendor-broadcast redesign) matched every
+ * order this shop was ever a CANDIDATE for, not just orders it actually won. Under the
+ * old single-vendor-per-product model that distinction didn't exist; it does now.
+ * Deliberately NOT importing Customer's Order entity directly (unlike the
+ * still-unfixed VendorDashboardService/VendorReportService), to avoid adding a third
+ * instance of that same boundary violation.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,7 +45,7 @@ public class VendorStatsServiceImpl implements VendorStatsService {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
 
-        BigDecimal totalSales = customerOrderService.getOrdersByShopId(shop.getId()).stream()
+        BigDecimal totalSales = customerOrderService.getAcceptedOrdersForShop(shop.getId()).stream()
                 .filter(order -> "DELIVERED".equals(order.getStatus()))
                 .flatMap(order -> order.getItems().stream())
                 .filter(item -> belongsToShop(item.getProductId(), shop.getId()))

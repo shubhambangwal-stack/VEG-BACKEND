@@ -28,6 +28,14 @@ public class VendorOrderController {
 
     private final VendorOrderManagementService vendorOrderManagementService;
 
+    /** NEW THIS ROUND -- the broadcast inbox. See VendorOrderManagementService.getOrderRequests(). */
+    @GetMapping("/requests")
+    public ResponseEntity<ApiResponse<List<OrderResponseDto>>> getOrderRequests() {
+        List<OrderResponseDto> requests = vendorOrderManagementService.getOrderRequests(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(requests, "Order requests retrieved successfully"));
+    }
+
+    /** CHANGED MEANING THIS ROUND -- now returns only orders this shop actually won the accept race for, not every order it was ever a candidate for. See VendorOrderManagementService.getShopOrders(). */
     @GetMapping
     public ResponseEntity<ApiResponse<List<OrderResponseDto>>> getOrders() {
         List<OrderResponseDto> orders = vendorOrderManagementService.getShopOrders(SecurityUtils.getCurrentUserId());

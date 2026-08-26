@@ -21,40 +21,46 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     Optional<Order> findByIdAndUserId(UUID id, UUID userId);
 
-    // FIXED THIS ROUND: previously a cross-module boundary violation (direct JPQL
-    // reference to Vendor's Product entity) that ALSO silently returned the wrong
-    // orders under the multi-vendor catalog model -- it matched "this shop currently
-    // sells ANY product in this order," not "this order was actually resolved to this
-    // shop at checkout." Under the old single-vendor-per-product model those were the
-    // same thing; they stopped being the same thing the moment two vendors could list
-    // the same CatalogProduct. Symptom: if Vendor A and Vendor B both sell Tomatoes,
-    // an order containing Tomatoes showed up as accept-able (and later "delivered") on
-    // BOTH vendors' order lists, regardless of which one the multi-cart logic actually
-    // narrowed the order to at checkout.
-    //
-    // Real fix: join through Order.candidateVendorIds -- the field OrderServiceImpl
-    // .buildOrderFromCart() already populates at checkout with the live-revalidated,
-    // narrowed vendor set for that specific order, but that nothing was reading until
-    // now. Also resolves the separate issue that the old JPQL referenced Vendor's
-    // Product entity, which no longer exists post-catalog-pivot (would fail at
-    // Hibernate startup validation, not just return wrong data).
-    @Query("SELECT DISTINCT o FROM Order o JOIN o.candidateVendorIds v WHERE v = :shopId")
-    List<Order> findByShopId(@Param("shopId") UUID shopId);
+    // REPLACED THIS ROUND -- findByShopId (candidacy-based) is gone entirely. Split
+    // into two queries with genuinely different meanings, per the vendor-broadcast
+    // redesign: candidacy alone was never the right check for either "should this
+    // vendor see it as a pending request" (also needs: still PLACED, not yet accepted
+    // by anyone, this shop hasn't already rejected it) or "is this vendor's own order"
+    // (needs: THIS shop specifically won the accept race, not just was a candidate).
 
     /**
-     * NEW THIS ROUND -- real atomic accept for the vendor-accept race. When
-     * candidateVendorIds legitimately holds more than one vendor (a cart that only
-     * ever contained a product every candidate shares, never narrowed further), more
-     * than one vendor can genuinely see the same order as accept-able. Same pattern as
-     * Delivery's DeliveryAssignmentRepository.atomicClaim() -- one conditional UPDATE,
-     * not a read-then-write, so only the first caller can actually flip status. Sets
-     * confirmedAt in the same atomic statement rather than as a separate write.
+     * The broadcast inbox — every order still awaiting a decision that this shop is
+     * still eligible to act on. Status intentionally passed as a parameter rather than
+     * a JPQL enum literal, matching this codebase's existing convention elsewhere.
+     */
+    @Query("SELECT DISTINCT o FROM Order o JOIN o.candidateVendorIds v " +
+           "WHERE v = :shopId AND o.status = :placedStatus AND o.acceptedShopId IS NULL " +
+           "AND :shopId NOT MEMBER OF o.rejectedShopIds")
+    List<Order> findRequestsForShop(@Param("shopId") UUID shopId, @Param("placedStatus") OrderStatus placedStatus);
+
+    /** A shop's real order history — only orders THIS shop actually won the accept race for. */
+    List<Order> findByAcceptedShopId(UUID shopId);
+
+    /**
+     * NEW THIS ROUND -- real atomic accept for the vendor-accept race, now recording
+     * WHO won directly in the same statement (acceptedShopId) -- previously acceptOrder
+     * took no shop id at all, which was the root cause of vendors who lost the race
+     * still being able to act on the order afterward. Same one-conditional-UPDATE
+     * pattern as Delivery's atomicClaim() and this repository's earlier atomicAccept.
      */
     @Modifying
-    @Query("UPDATE Order o SET o.status = :newStatus, o.confirmedAt = CURRENT_TIMESTAMP " +
+    @Query("UPDATE Order o SET o.status = :newStatus, o.confirmedAt = CURRENT_TIMESTAMP, o.acceptedShopId = :shopId " +
            "WHERE o.id = :orderId AND o.status = :expectedStatus")
-    int atomicAccept(@Param("orderId") UUID orderId, @Param("newStatus") OrderStatus newStatus,
-                      @Param("expectedStatus") OrderStatus expectedStatus);
+    int atomicAccept(@Param("orderId") UUID orderId, @Param("shopId") UUID shopId,
+                      @Param("newStatus") OrderStatus newStatus, @Param("expectedStatus") OrderStatus expectedStatus);
+
+    /**
+     * NEW THIS ROUND -- feeds the vendor-accept-timeout sweep (mirrors Delivery's
+     * expireStaleAssignments pattern). Orders still PLACED, nobody's accepted, and
+     * older than the cutoff the caller computes from PlatformSettingsService
+     * .getVendorAcceptTimeoutSeconds().
+     */
+    List<Order> findByStatusAndAcceptedShopIdIsNullAndCreatedAtBefore(OrderStatus status, java.time.Instant cutoff);
 
     Page<Order> findByUserIdAndStatus(UUID userId, OrderStatus status, Pageable pageable);
 
