@@ -13,10 +13,48 @@ import java.util.UUID;
 public interface CustomerOrderService {
 
     // ── Vendor-facing methods ──────────────────────────────
-    void acceptOrder(UUID orderId);
-    void rejectOrder(UUID orderId);
+    // BREAKING CHANGE THIS ROUND: acceptOrder/rejectOrder now require a shopId.
+    // Previously took none at all -- that was the root cause of a real bug: an order
+    // accepted by one vendor stayed visible and actionable by every other original
+    // candidate, since nothing recorded who actually won. getOrdersByShopId is REMOVED
+    // entirely, split into two methods with genuinely different meanings -- see each
+    // one's own javadoc. Full detail in NOTES_CUSTOMER.md.
+
+    /**
+     * Real atomic accept -- one conditional UPDATE, not a read-then-write. Throws
+     * ORDER_ALREADY_ACCEPTED (409) if another shop's accept already won the race for
+     * this order; ORDER_NOT_ACCEPTABLE (400) if the order is no longer in a state
+     * where accepting makes sense at all (already delivered/cancelled).
+     */
+    void acceptOrder(UUID orderId, UUID shopId);
+
+    /**
+     * Narrows the candidate pool -- does NOT cancel the order by itself. Adds shopId
+     * to the order's rejected set; if that empties the remaining candidate pool
+     * (every original candidate has now rejected), cancels for real via
+     * cancelOrderSystemInitiated. Throws ORDER_NOT_A_CANDIDATE if shopId was never in
+     * this order's candidateVendorIds; ORDER_NOT_REJECTABLE if the order has already
+     * moved past PLACED (someone else already accepted, or it's already terminal).
+     */
+    void rejectOrder(UUID orderId, UUID shopId);
+
     void updateOrderStatus(UUID orderId, String status);
-    List<OrderResponseDto> getOrdersByShopId(UUID shopId);
+
+    /**
+     * NEW -- the broadcast inbox. Every order still awaiting a decision that this shop
+     * is still eligible to act on (candidate, not yet accepted by anyone, hasn't
+     * rejected it themselves). Disappears from this list the instant ANY shop accepts,
+     * or this shop rejects, or the vendor-accept-timeout sweep cancels it.
+     */
+    List<OrderResponseDto> getOrderRequestsForShop(UUID shopId);
+
+    /**
+     * NEW -- a shop's real order history. Only orders THIS shop actually won the
+     * accept race for -- never orders they were merely a candidate for. This is what
+     * GET /api/vendor/orders now means; markReadyForPickup and every other
+     * post-accept action are scoped against this, not candidacy.
+     */
+    List<OrderResponseDto> getAcceptedOrdersForShop(UUID shopId);
 
     // ── Delivery-facing methods ──────────────────────────
 
