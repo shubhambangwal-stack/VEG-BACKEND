@@ -91,7 +91,8 @@ parser.add_argument("--port",     default=5432, type=int)
 parser.add_argument("--db",       default="veggofresh_local")
 parser.add_argument("--user",     default="postgres")
 parser.add_argument("--password", default="postgres")
-parser.add_argument("--clear",    action="store_true", help="Clear existing data before seeding")
+parser.add_argument("--keep-data", action="store_true", help="Do not clear existing data before seeding")
+parser.add_argument("--clear", action="store_true", help="(Deprecated) Data is now cleared by default")
 args = parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -196,7 +197,7 @@ CARTITEM1_ID = uid("ci.1")
 CARTITEM2_ID = uid("ci.2")
 CARTITEM3_ID = uid("ci.3")
 
-ORDER1_ID  = uid("order.1")  # PENDING
+ORDER1_ID  = uid("order.1")  # PLACED
 ORDER2_ID  = uid("order.2")  # CONFIRMED
 ORDER3_ID  = uid("order.3")  # PREPARING
 ORDER4_ID  = uid("order.4")  # OUT_FOR_DELIVERY
@@ -337,7 +338,7 @@ def clear_db(cur):
             delivery_assignment_status_history, delivery_otps, delivery_earnings, 
             delivery_online_sessions, delivery_partner_ratings, delivery_proof_of_delivery,
             wallets, wallet_transactions, payment_orders, payment_order_lines, 
-            payment_webhook_events, payout_requests
+            payment_webhook_events, payout_requests, refresh_tokens, otp_verifications
         CASCADE;
     """)
     # Delete all users except the Flyway-seeded admin
@@ -485,7 +486,7 @@ def seed_customer_module(cur):
         # (id, user_id, order_number, status, total_amount, delivery_fee, tax,
         #  delivery_addr, lat, lon, source_cart_id, accepted_shop_id,
         #  confirmed_at, preparing_at, out_at, delivered_at, cancelled_at)
-        (ORDER1_ID, CUST1_ID, "VGF-0001", "PENDING",          155.00, 20.00, 5.00, DELIVERY_ADDR, 12.9716, 77.5946, CART1_ID, None,    None, None, None, None, None),
+        (ORDER1_ID, CUST1_ID, "VGF-0001", "PLACED",           155.00, 20.00, 5.00, DELIVERY_ADDR, 12.9716, 77.5946, CART1_ID, None,    None, None, None, None, None),
         (ORDER2_ID, CUST1_ID, "VGF-0002", "CONFIRMED",         85.00, 15.00, 3.50, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-3600), None, None, None, None),
         (ORDER3_ID, CUST1_ID, "VGF-0003", "PREPARING",        200.00, 20.00, 8.00, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-7200), ts(-3600), None, None, None),
         (ORDER4_ID, CUST2_ID, "VGF-0004", "OUT_FOR_DELIVERY",  99.00, 15.00, 4.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, SHOP1_ID, ts(-10800), ts(-7200), ts(-3600), None, None),
@@ -705,12 +706,14 @@ def seed_vendor_module(cur):
     log(f"vendor_operating_hours ({len(oh_rows)} rows)")
 
     # vendor_special_closures
+    # Table schema: id, created_at, updated_at, deleted_at, version, shop_id, name, start_date, end_date
     run(cur, """
         INSERT INTO vendor_special_closures (id, created_at, updated_at, deleted_at, version,
-                                             shop_id, closure_date, reason)
-        VALUES (%s, %s, %s, NULL, 0, %s, %s, %s)
+                                             shop_id, name, start_date, end_date)
+        VALUES (%s, %s, %s, NULL, 0, %s, %s, %s, %s)
         ON CONFLICT DO NOTHING
-    """, (VCLOSE1_ID, NOW, NOW, SHOP1_ID, TODAY + timedelta(days=7), "National Holiday"))
+    """, (VCLOSE1_ID, NOW, NOW, SHOP1_ID, "National Holiday",
+          TODAY + timedelta(days=7), TODAY + timedelta(days=7)))
     log("vendor_special_closures")
 
     # legacy vendor_categories + vendor_products + vendor_inventory_items
@@ -846,34 +849,38 @@ def seed_delivery_module(cur):
     log("delivery_assignments")
 
     # delivery_assignment_status_history
+    # Table schema: id, created_at, updated_at, deleted_at, version, assignment_id, status
     history = [
-        (DASH1_ID, DA2_ID, DP1_ID, "ASSIGNED",  ts(-3600)),
-        (DASH2_ID, DA2_ID, DP1_ID, "ACCEPTED",  ts(-3590)),
-        (DASH3_ID, DA4_ID, DP1_ID, "ASSIGNED",  ts(-86400)),
-        (DASH4_ID, DA4_ID, DP1_ID, "DELIVERED", ts(-75600)),
+        (DASH1_ID, DA2_ID, "ASSIGNED"),
+        (DASH2_ID, DA2_ID, "ACCEPTED"),
+        (DASH3_ID, DA4_ID, "ASSIGNED"),
+        (DASH4_ID, DA4_ID, "DELIVERED"),
     ]
     run_many(cur, """
         INSERT INTO delivery_assignment_status_history
                     (id, created_at, updated_at, deleted_at, version,
-                     assignment_id, delivery_partner_user_id, status, changed_at)
+                     assignment_id, status)
         VALUES %s ON CONFLICT DO NOTHING
-    """, [(h[0], NOW, NOW, None, 0, h[1], h[2], h[3], h[4]) for h in history])
+    """, [(h[0], NOW, NOW, None, 0, h[1], h[2]) for h in history])
     log("delivery_assignment_status_history")
 
     # delivery_otps
+    # Table schema: id, created_at, updated_at, deleted_at, version,
+    #               assignment_id, otp_code, expires_at, verified, attempts, type
+    # NOTE: uk_delivery_otps_assignment is a non-partial UNIQUE on (assignment_id) — only
+    # one row per assignment. We seed only the DROP OTP for DA3 (the PICKUP was consumed).
     otps = [
-        # (id, assignment_id, otp_code, type, is_used, created_at, used_at)
-        (DOTP1_ID, DA1_ID, "4821", "DROP",   False, NOW,         None),
-        (DOTP2_ID, DA3_ID, "7364", "PICKUP", True,  ts(-7200),  ts(-7100)),
-        (DOTP3_ID, DA3_ID, "9283", "DROP",   False, ts(-7200),  None),
-        (DOTP4_ID, DA4_ID, "1029", "DROP",   True,  ts(-86400), ts(-75700)),
-        (DOTP5_ID, DA6_ID, "5517", "DROP",   True,  ts(-172800),ts(-162100)),
+        # (id, assignment_id, otp_code, type, verified, expires_at, deleted_at)
+        (DOTP1_ID, DA1_ID, "4821", "DROP",  False, ts(300),     None),
+        (DOTP3_ID, DA3_ID, "9283", "DROP",  False, ts(-7100),   None),
+        (DOTP4_ID, DA4_ID, "1029", "DROP",  True,  ts(-75700),  None),
+        (DOTP5_ID, DA6_ID, "5517", "DROP",  True,  ts(-162100), None),
     ]
     run_many(cur, """
         INSERT INTO delivery_otps (id, created_at, updated_at, deleted_at, version,
-                                   assignment_id, otp_code, type, is_used, used_at)
+                                   assignment_id, otp_code, expires_at, verified, attempts, type)
         VALUES %s ON CONFLICT DO NOTHING
-    """, [(o[0], o[6], NOW, None, 0, o[1], o[2], o[3], o[4], o[7]) for o in otps])
+    """, [(o[0], NOW, NOW, o[6], 0, o[1], o[2], o[5], o[4], 0, o[3]) for o in otps])
     log("delivery_otps")
 
     # delivery_earnings
@@ -996,16 +1003,22 @@ def seed_payment_module(cur):
     log("payment_order_lines")
 
     # payment_webhook_events
+    # Table schema: id, razorpay_event_id, event_type, payload, processed_at,
+    #               created_at, updated_at, deleted_at, version
     pwe_rows = [
-        (PWE1_ID, "payment.captured", PO1_ID, "order_FakeRzp0001", "pay_FakeRzp0001", "PROCESSED"),
-        (PWE2_ID, "payment.failed",   PO3_ID, "order_FakeRzp0003", "pay_FakeRzp0003", "PROCESSED"),
+        (PWE1_ID, "evt_FakeRzp0001", "payment.captured",
+         '{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_FakeRzp0001","order_id":"order_FakeRzp0001"}}}}',
+         ts(-86000)),
+        (PWE2_ID, "evt_FakeRzp0002", "payment.failed",
+         '{"event":"payment.failed","payload":{"payment":{"entity":{"id":"pay_FakeRzp0003","order_id":"order_FakeRzp0003"}}}}',
+         ts(-7100)),
     ]
     run_many(cur, """
-        INSERT INTO payment_webhook_events (id, event_type, payment_order_id,
-                                            razorpay_order_id, razorpay_payment_id,
-                                            status, created_at, updated_at, deleted_at)
+        INSERT INTO payment_webhook_events (id, razorpay_event_id, event_type, payload,
+                                            processed_at,
+                                            created_at, updated_at, deleted_at, version)
         VALUES %s ON CONFLICT DO NOTHING
-    """, [(p[0], p[1], p[2], p[3], p[4], p[5], NOW, NOW, None) for p in pwe_rows])
+    """, [(p[0], p[1], p[2], p[3], p[4], NOW, NOW, None, 0) for p in pwe_rows])
     log("payment_webhook_events")
 
     # payout_requests
@@ -1042,7 +1055,7 @@ def main():
     conn.autocommit = False
     cur = conn.cursor()
 
-    if args.clear:
+    if not args.keep_data:
         try:
             clear_db(cur)
             conn.commit()
