@@ -21,7 +21,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
+@Transactional(readOnly = true)
 public class AdminProductServiceImpl implements AdminProductService {
 
     private final CatalogProductRepository productRepository;
@@ -29,6 +29,7 @@ public class AdminProductServiceImpl implements AdminProductService {
     private final CatalogSubcategoryRepository subcategoryRepository;
 
     @Override
+    @Transactional
     public ProductResponseDto createProduct(ProductRequestDto request) {
         CatalogCategory category = getCategory(request.getCategoryId());
         CatalogSubcategory subcategory = getSubcategory(request.getSubcategoryId());
@@ -54,6 +55,7 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
+    @Transactional
     public ProductResponseDto updateProduct(UUID id, ProductRequestDto request) {
         CatalogProduct product = getEntity(id);
         CatalogCategory category = getCategory(request.getCategoryId());
@@ -81,19 +83,16 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public ProductResponseDto getProductById(UUID id) {
         return toDto(getEntity(id));
     }
 
     @Override
-    @Transactional(readOnly = true)
     public java.util.Optional<ProductResponseDto> findProductById(UUID id) {
         return productRepository.findById(id).map(this::toDto);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public Page<ProductResponseDto> searchProducts(String search, UUID categoryId, UUID subcategoryId, Pageable pageable) {
         String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
         return productRepository.search(normalizedSearch, categoryId, subcategoryId, pageable)
@@ -101,6 +100,7 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
+    @Transactional
     public ProductResponseDto setActive(UUID id, boolean active) {
         CatalogProduct product = getEntity(id);
         product.setActive(active);
