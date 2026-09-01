@@ -204,6 +204,10 @@ ORDER4_ID  = uid("order.4")  # OUT_FOR_DELIVERY
 ORDER5_ID  = uid("order.5")  # DELIVERED
 ORDER6_ID  = uid("order.6")  # CANCELLED
 ORDER7_ID  = uid("order.7")  # DELIVERED (cust2)
+# Pending orders broadcast to Anita Rao's shop (SHOP1) — no accepted_shop_id yet
+ORDER8_ID  = uid("order.8")  # PLACED — pending for SHOP1 (cust1)
+ORDER9_ID  = uid("order.9")  # PLACED — pending for SHOP1 (cust2)
+ORDER10_ID = uid("order.10") # PLACED — pending for SHOP1 (cust1, multi-item)
 
 OITEM1_ID  = uid("oi.1")
 OITEM2_ID  = uid("oi.2")
@@ -213,6 +217,10 @@ OITEM5_ID  = uid("oi.5")
 OITEM6_ID  = uid("oi.6")
 OITEM7_ID  = uid("oi.7")
 OITEM8_ID  = uid("oi.8")
+OITEM9_ID  = uid("oi.9")   # ORDER8  — spinach
+OITEM10_ID = uid("oi.10")  # ORDER9  — potato
+OITEM11_ID = uid("oi.11")  # ORDER10 — full cream milk
+OITEM12_ID = uid("oi.12")  # ORDER10 — spinach
 
 RATING1_ID = uid("rating.order5")
 RATING2_ID = uid("rating.order7")
@@ -329,7 +337,7 @@ def clear_db(cur):
     cur.execute("""
         TRUNCATE TABLE 
             customer_profiles, addresses, delivery_slots, carts, cart_items, cart_candidate_vendors,
-            orders, order_items, order_candidate_vendors, ratings, wishlists, 
+            orders, order_items, order_candidate_vendors, order_rejected_shops, ratings, wishlists, 
             vendor_shops, vendor_documents, vendor_operating_hours, 
             vendor_categories, vendor_products, vendor_inventory_items, 
             vendor_listings, vendor_shop_ratings, vendor_special_closures,
@@ -486,13 +494,17 @@ def seed_customer_module(cur):
         # (id, user_id, order_number, status, total_amount, delivery_fee, tax,
         #  delivery_addr, lat, lon, source_cart_id, accepted_shop_id,
         #  confirmed_at, preparing_at, out_at, delivered_at, cancelled_at)
-        (ORDER1_ID, CUST1_ID, "VGF-0001", "PLACED",           155.00, 20.00, 5.00, DELIVERY_ADDR, 12.9716, 77.5946, CART1_ID, None,    None, None, None, None, None),
-        (ORDER2_ID, CUST1_ID, "VGF-0002", "CONFIRMED",         85.00, 15.00, 3.50, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-3600), None, None, None, None),
-        (ORDER3_ID, CUST1_ID, "VGF-0003", "PREPARING",        200.00, 20.00, 8.00, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-7200), ts(-3600), None, None, None),
-        (ORDER4_ID, CUST2_ID, "VGF-0004", "OUT_FOR_DELIVERY",  99.00, 15.00, 4.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, SHOP1_ID, ts(-10800), ts(-7200), ts(-3600), None, None),
-        (ORDER5_ID, CUST1_ID, "VGF-0005", "DELIVERED",        320.00, 20.00, 12.00, DELIVERY_ADDR, 12.9716, 77.5946, None, SHOP1_ID, ts(-86400), ts(-82800), ts(-79200), ts(-75600), None),
-        (ORDER6_ID, CUST2_ID, "VGF-0006", "CANCELLED",         60.00, 15.00, 2.50, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, None, None, None, None, None, ts(-43200)),
-        (ORDER7_ID, CUST2_ID, "VGF-0007", "DELIVERED",        180.00, 20.00, 7.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, SHOP2_ID, ts(-172800), ts(-169200), ts(-165600), ts(-162000), None),
+        (ORDER1_ID,  CUST1_ID, "VGF-0001", "PLACED",           155.00, 20.00,  5.00, DELIVERY_ADDR, 12.9716, 77.5946, CART1_ID, None,    None, None, None, None, None),
+        (ORDER2_ID,  CUST1_ID, "VGF-0002", "CONFIRMED",         85.00, 15.00,  3.50, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-3600), None, None, None, None),
+        (ORDER3_ID,  CUST1_ID, "VGF-0003", "PREPARING",        200.00, 20.00,  8.00, DELIVERY_ADDR, 12.9716, 77.5946, None,     SHOP1_ID, ts(-7200), ts(-3600), None, None, None),
+        (ORDER4_ID,  CUST2_ID, "VGF-0004", "OUT_FOR_DELIVERY",  99.00, 15.00,  4.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, SHOP1_ID, ts(-10800), ts(-7200), ts(-3600), None, None),
+        (ORDER5_ID,  CUST1_ID, "VGF-0005", "DELIVERED",        320.00, 20.00, 12.00, DELIVERY_ADDR, 12.9716, 77.5946, None, SHOP1_ID, ts(-86400), ts(-82800), ts(-79200), ts(-75600), None),
+        (ORDER6_ID,  CUST2_ID, "VGF-0006", "CANCELLED",         60.00, 15.00,  2.50, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, None, None, None, None, None, ts(-43200)),
+        (ORDER7_ID,  CUST2_ID, "VGF-0007", "DELIVERED",        180.00, 20.00,  7.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, SHOP2_ID, ts(-172800), ts(-169200), ts(-165600), ts(-162000), None),
+        # ── Pending orders in Anita Rao's inbox (SHOP1, no accepted_shop_id) ──
+        (ORDER8_ID,  CUST1_ID, "VGF-0008", "PLACED",            80.00, 15.00,  3.00, DELIVERY_ADDR, 12.9716, 77.5946, None, None, None, None, None, None, None),
+        (ORDER9_ID,  CUST2_ID, "VGF-0009", "PLACED",           125.00, 20.00,  5.00, "45 FC Road, Pune 411004", 18.5204, 73.8567, None, None, None, None, None, None, None),
+        (ORDER10_ID, CUST1_ID, "VGF-0010", "PLACED",           170.00, 20.00,  6.50, DELIVERY_ADDR, 12.9716, 77.5946, None, None, None, None, None, None, None),
     ]
     run_many(cur, """
         INSERT INTO orders (id, created_at, updated_at, deleted_at, version,
@@ -506,16 +518,20 @@ def seed_customer_module(cur):
     """, [(o[0], NOW, NOW, None, 0, o[1], o[2], o[3], o[4], o[5], o[6],
            o[7], o[8], o[9], o[10], o[11], o[12], o[13], o[14], o[15], o[16])
           for o in orders])
-    log("orders (7 — one per status scenario)")
+    log("orders (10 — 7 status scenarios + 3 pending for Anita Rao / SHOP1)")
 
     # ── order_candidate_vendors ────────────────────────────────────────────
     run_many(cur, """
         INSERT INTO order_candidate_vendors (order_id, vendor_id)
         VALUES %s ON CONFLICT DO NOTHING
     """, [
-        (ORDER1_ID, SHOP1_ID),
-        (ORDER1_ID, SHOP2_ID),
-        (ORDER2_ID, SHOP1_ID),
+        (ORDER1_ID,  SHOP1_ID),
+        (ORDER1_ID,  SHOP2_ID),
+        (ORDER2_ID,  SHOP1_ID),
+        # Pending orders — broadcast to Anita Rao's shop only
+        (ORDER8_ID,  SHOP1_ID),
+        (ORDER9_ID,  SHOP1_ID),
+        (ORDER10_ID, SHOP1_ID),
     ])
     log("order_candidate_vendors")
 
@@ -525,14 +541,19 @@ def seed_customer_module(cur):
                                  order_id, product_id, quantity, price, unit)
         VALUES %s ON CONFLICT DO NOTHING
     """, [
-        (OITEM1_ID, NOW, NOW, None, 0, ORDER1_ID, CP1_ID,  2,  40.00, "250g"),
-        (OITEM2_ID, NOW, NOW, None, 0, ORDER1_ID, CP3_ID,  5,  25.00, "1kg"),
-        (OITEM3_ID, NOW, NOW, None, 0, ORDER2_ID, CP9_ID,  1,  85.00, "1L"),
-        (OITEM4_ID, NOW, NOW, None, 0, ORDER3_ID, CP15_ID, 2, 100.00, "1kg"),
-        (OITEM5_ID, NOW, NOW, None, 0, ORDER4_ID, CP5_ID,  4,  24.75, "500g"),
-        (OITEM6_ID, NOW, NOW, None, 0, ORDER5_ID, CP7_ID,  3,  90.00, "1kg"),
-        (OITEM7_ID, NOW, NOW, None, 0, ORDER6_ID, CP11_ID, 2,  30.00, "6pcs"),
-        (OITEM8_ID, NOW, NOW, None, 0, ORDER7_ID, CP13_ID, 2,  90.00, "500g"),
+        (OITEM1_ID,  NOW, NOW, None, 0, ORDER1_ID,  CP1_ID,  2,  40.00, "250g"),
+        (OITEM2_ID,  NOW, NOW, None, 0, ORDER1_ID,  CP3_ID,  5,  25.00, "1kg"),
+        (OITEM3_ID,  NOW, NOW, None, 0, ORDER2_ID,  CP9_ID,  1,  85.00, "1L"),
+        (OITEM4_ID,  NOW, NOW, None, 0, ORDER3_ID,  CP15_ID, 2, 100.00, "1kg"),
+        (OITEM5_ID,  NOW, NOW, None, 0, ORDER4_ID,  CP5_ID,  4,  24.75, "500g"),
+        (OITEM6_ID,  NOW, NOW, None, 0, ORDER5_ID,  CP7_ID,  3,  90.00, "1kg"),
+        (OITEM7_ID,  NOW, NOW, None, 0, ORDER6_ID,  CP11_ID, 2,  30.00, "6pcs"),
+        (OITEM8_ID,  NOW, NOW, None, 0, ORDER7_ID,  CP13_ID, 2,  90.00, "500g"),
+        # Items for Anita Rao's pending orders (products from SHOP1 listings: CP1, CP3, CP9)
+        (OITEM9_ID,  NOW, NOW, None, 0, ORDER8_ID,  CP1_ID,  2,  40.00, "250g"),  # 2× spinach = ₹80
+        (OITEM10_ID, NOW, NOW, None, 0, ORDER9_ID,  CP3_ID,  5,  25.00, "1kg"),   # 5× potato  = ₹125
+        (OITEM11_ID, NOW, NOW, None, 0, ORDER10_ID, CP9_ID,  1,  85.00, "1L"),    # 1× milk    = ₹85
+        (OITEM12_ID, NOW, NOW, None, 0, ORDER10_ID, CP1_ID,  2,  40.00, "250g"),  # 2× spinach = ₹80; total ₹165 (+rounding in order)
     ])
     log("order_items")
 

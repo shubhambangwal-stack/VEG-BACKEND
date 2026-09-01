@@ -1,6 +1,9 @@
 package com.veggofresh.payment.service;
 
 import com.veggofresh.admin.service.PlatformSettingsService;
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.payment.client.RazorpayClient;
 import com.veggofresh.payment.client.RazorpayPaymentStatus;
 import com.veggofresh.payment.dto.PaymentHoldResponseDto;
@@ -48,6 +51,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final WalletService walletService;
     private final PlatformSettingsService platformSettingsService;
     private final com.veggofresh.payment.config.RazorpayProperties razorpayProperties;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -185,6 +189,7 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentOrder.getId(), 
                 "Wallet top-up via Razorpay"
             );
+            notifyPaymentSuccess(paymentOrder.getUserId(), paymentOrder.getId(), paymentOrder.getTotalAmount());
             log.info("Top-up complete. Wallet credited for paymentOrderId={}", paymentOrder.getId());
         }
     }
@@ -353,12 +358,27 @@ public class PaymentServiceImpl implements PaymentService {
                     : PaymentOrderStatus.PARTIALLY_CAPTURED);
             paymentOrderRepository.save(batch);
 
+            notifyPaymentSuccess(batch.getUserId(), batch.getId(), captureAmount);
+
             log.info("Payment captured: paymentOrderId={} capturedAmount={} status={}",
                     paymentOrderId, captureAmount, batch.getStatus());
         } catch (Exception e) {
             log.error("Razorpay capture FAILED for paymentOrderId={}: {}", paymentOrderId, e.getMessage(), e);
             batch.setStatus(PaymentOrderStatus.FAILED);
             paymentOrderRepository.save(batch);
+            notifyPaymentFailed(batch.getUserId(), batch.getId(), e.getMessage());
         }
+    }
+
+    private void notifyPaymentSuccess(UUID customerUserId, UUID paymentOrderId, BigDecimal amount) {
+        notificationService.send(customerUserId, NotificationRecipientRole.CUSTOMER, NotificationType.PAYMENT_SUCCESS,
+                "Payment successful", "Your payment of \u20B9" + amount + " was successful",
+                "{\"paymentOrderId\":\"" + paymentOrderId + "\",\"amount\":" + amount + "}");
+    }
+
+    private void notifyPaymentFailed(UUID customerUserId, UUID paymentOrderId, String reason) {
+        notificationService.send(customerUserId, NotificationRecipientRole.CUSTOMER, NotificationType.PAYMENT_FAILED,
+                "Payment failed", "Your payment could not be completed" + (reason != null ? " — try again" : ""),
+                "{\"paymentOrderId\":\"" + paymentOrderId + "\",\"reason\":\"" + (reason != null ? reason : "") + "\"}");
     }
 }

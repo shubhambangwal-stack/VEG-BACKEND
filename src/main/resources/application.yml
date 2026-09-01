@@ -92,6 +92,13 @@ veggofresh:
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
 
+  # ── WebSocket / STOMP ─────────────────────────────────────
+  websocket:
+    # Origin patterns allowed for the /ws handshake (raw STOMP + SockJS).
+    # Lock this down in production via WS_ALLOWED_ORIGIN_PATTERNS, e.g.
+    # "http://veggofresh.in,https://veggofresh.in".
+    allowed-origin-patterns: ${WS_ALLOWED_ORIGIN_PATTERNS:*}
+
   # ── Razorpay ──────────────────────────────────────────────
   razorpay:
     # ⚠ Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET env vars in all environments.
