@@ -55,7 +55,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
+public class
+DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
     private static final int OTP_EXPIRY_MINUTES = 15;
     private static final int MAX_OTP_ATTEMPTS = 5;
