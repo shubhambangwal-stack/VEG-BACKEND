@@ -2,6 +2,9 @@ package com.veggofresh.payment.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.payment.client.RazorpayClient;
 import com.veggofresh.payment.entity.PaymentOrder;
 import com.veggofresh.payment.entity.PaymentOrderStatus;
@@ -35,6 +38,7 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
     private final PaymentWebhookEventRepository webhookEventRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final ObjectMapper objectMapper;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -141,6 +145,9 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
                 if (!po.getStatus().isTerminal()) {
                     po.setStatus(PaymentOrderStatus.FAILED);
                     paymentOrderRepository.save(po);
+                    notificationService.send(po.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.PAYMENT_FAILED,
+                            "Payment failed", "Your payment could not be completed — please try again",
+                            "{\"paymentOrderId\":\"" + po.getId() + "\"}");
                     log.warn("PaymentOrder {} marked FAILED via webhook", po.getId());
                 }
             });

@@ -36,7 +36,7 @@ public class VendorReportService {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
-        List<Order> orders = orderRepository.findByShopId(shop.getId());
+        List<Order> orders = orderRepository.findByAcceptedShopId(shop.getId());
 
         long totalSalesCount = orders.stream()
                 .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
@@ -71,7 +71,7 @@ public class VendorReportService {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
-        List<Order> orders = orderRepository.findByShopId(shop.getId());
+        List<Order> orders = orderRepository.findByAcceptedShopId(shop.getId());
 
         BigDecimal totalEarnings = orders.stream()
                 .filter(o -> o.getStatus() == OrderStatus.DELIVERED)

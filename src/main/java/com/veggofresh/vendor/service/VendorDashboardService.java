@@ -49,7 +49,7 @@ public class VendorDashboardService {
         // contract outright. See NOTES_VENDOR.md.
         long outOfStockCount = 0;
 
-        List<Order> allShopOrders = orderRepository.findByShopId(shop.getId());
+        List<Order> allShopOrders = orderRepository.findByAcceptedShopId(shop.getId());
 
         Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
 
