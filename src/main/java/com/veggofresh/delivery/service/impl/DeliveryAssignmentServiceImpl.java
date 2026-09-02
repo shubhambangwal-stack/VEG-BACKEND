@@ -23,9 +23,6 @@ import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
 import com.veggofresh.delivery.service.MockFileStorageService;
-import com.veggofresh.notification.entity.NotificationRecipientRole;
-import com.veggofresh.notification.entity.NotificationType;
-import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,7 +55,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
+public class
+DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
     private static final int OTP_EXPIRY_MINUTES = 15;
     private static final int MAX_OTP_ATTEMPTS = 5;
@@ -82,7 +80,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private final UserLookupService userLookupService;
     private final MockFileStorageService fileStorageService;
     private final PlatformSettingsService platformSettingsService;
-    private final NotificationService notificationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -153,12 +150,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         customerOrderService.assignDeliveryAgent(orderId, partner.getFullName(), agentPhone,
                 null /* no profile photo field exists on DeliveryPartnerProfile yet */,
                 null /* no real ETA calculation exists yet -- see NOTES_DELIVERY.md */);
-
-        // DELIVERY_ASSIGNED → the partner who now owns this order's fulfilment.
-        notificationService.send(refreshed.getDeliveryPartnerUserId(), NotificationRecipientRole.DELIVERY,
-                NotificationType.DELIVERY_ASSIGNED, "New delivery assigned",
-                "You accepted delivery for order " + refreshed.getOrderId() + " — pickup at " + refreshed.getShopName(),
-                assignmentData(refreshed));
 
         return mapToLightDto(refreshed);
     }
@@ -250,19 +241,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .orElseThrow(() -> new BusinessException("DELIVERY_PICKUP_OTP_NOT_FOUND", "No pickup OTP issued for this assignment", HttpStatus.NOT_FOUND));
 
         verifyOtpInternal(pickupOtp, otp, "DELIVERY_PICKUP_OTP");
-
-        // Pickup OTP verified → shop owner and partner both get confirmation.
-        NotificationType type = NotificationType.DELIVERY_PICKUP_OTP_VERIFIED;
-        if (assignment.getShopOwnerUserId() != null) {
-            notificationService.send(assignment.getShopOwnerUserId(), NotificationRecipientRole.VENDOR, type,
-                    "Pickup verified", "The delivery partner verified the pickup OTP for order " + assignment.getOrderId(),
-                    assignmentData(assignment));
-        }
-        if (assignment.getDeliveryPartnerUserId() != null) {
-            notificationService.send(assignment.getDeliveryPartnerUserId(), NotificationRecipientRole.DELIVERY, type,
-                    "Pickup verified", "You verified the pickup OTP — order is on its way to the customer",
-                    assignmentData(assignment));
-        }
     }
 
     @Override
@@ -279,19 +257,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .orElseThrow(() -> new BusinessException("DELIVERY_OTP_NOT_FOUND", "No OTP issued for this delivery", HttpStatus.NOT_FOUND));
 
         verifyOtpInternal(dropOtp, otp, "DELIVERY_OTP");
-
-        // Delivery OTP verified → customer + partner both see the handoff is confirmed.
-        NotificationType type = NotificationType.DELIVERY_DROP_OTP_VERIFIED;
-        if (assignment.getCustomerUserId() != null) {
-            notificationService.send(assignment.getCustomerUserId(), NotificationRecipientRole.CUSTOMER, type,
-                    "Delivery OTP verified", "Order " + assignment.getOrderId() + " has been handed over",
-                    assignmentData(assignment));
-        }
-        if (assignment.getDeliveryPartnerUserId() != null) {
-            notificationService.send(assignment.getDeliveryPartnerUserId(), NotificationRecipientRole.DELIVERY, type,
-                    "Delivery OTP verified", "You verified the delivery OTP — order delivered",
-                    assignmentData(assignment));
-        }
     }
 
     @Override
@@ -551,20 +516,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         otp.setAttempts(0);
         otpRepository.save(otp);
 
-        // Pickup OTP generated → the shop owner needs it to hand the parcel
-        // over, and the partner needs to know it's been issued.
-        NotificationType type = NotificationType.DELIVERY_PICKUP_OTP_GENERATED;
-        if (assignment.getShopOwnerUserId() != null) {
-            notificationService.send(assignment.getShopOwnerUserId(), NotificationRecipientRole.VENDOR, type,
-                    "Pickup OTP for order " + assignment.getOrderId(), "Share this OTP with the delivery partner at pickup: " + otpCode,
-                    assignmentData(assignment));
-        }
-        if (assignment.getDeliveryPartnerUserId() != null) {
-            notificationService.send(assignment.getDeliveryPartnerUserId(), NotificationRecipientRole.DELIVERY, type,
-                    "Pickup OTP issued", "Ask the shop for the pickup OTP before taking the order",
-                    assignmentData(assignment));
-        }
-
         // MOCK — real delivery, this needs to actually reach the Vendor's screen (their
         // "ready for pickup"/order-detail view). No such Vendor-facing endpoint exists
         // yet to READ this value -- that's Vendor-round work. See NOTES_DELIVERY.md for
@@ -583,21 +534,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         otp.setVerified(false);
         otp.setAttempts(0);
         otpRepository.save(otp);
-
-        // Drop OTP generated → customer (needs the code to release the parcel)
-        // and the partner (needs to request it at the door).
-        NotificationType type = NotificationType.DELIVERY_DROP_OTP_GENERATED;
-        if (assignment.getCustomerUserId() != null) {
-            notificationService.send(assignment.getCustomerUserId(), NotificationRecipientRole.CUSTOMER, type,
-                    "Share your delivery OTP: " + otpCode,
-                    "Give this code to your delivery partner only when your order arrives",
-                    assignmentData(assignment));
-        }
-        if (assignment.getDeliveryPartnerUserId() != null) {
-            notificationService.send(assignment.getDeliveryPartnerUserId(), NotificationRecipientRole.DELIVERY, type,
-                    "Delivery OTP issued", "Ask the customer for the delivery OTP before handing over the order",
-                    assignmentData(assignment));
-        }
 
         log.info("MOCK — Delivery drop OTP {} issued for assignment {}", otpCode, assignment.getId());
     }
@@ -654,11 +590,6 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         entry.setAssignmentId(assignmentId);
         entry.setStatus(status);
         historyRepository.save(entry);
-    }
-
-    private String assignmentData(DeliveryAssignment a) {
-        return "{\"orderId\":\"" + a.getOrderId() + "\",\"assignmentId\":\"" + a.getId()
-                + "\",\"shopName\":" + com.veggofresh.notification.util.NotificationJson.str(a.getShopName()) + "}";
     }
 
     private DeliveryAssignmentResponseDto mapToLightDto(DeliveryAssignment a) {
