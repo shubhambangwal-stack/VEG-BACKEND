@@ -51,6 +51,18 @@ spring:
     default-property-inclusion: non_null
     time-zone: UTC
 
+  # ── Multipart / File Uploads ────────────────────────────────
+  # Spring Boot's own default is 1MB per file / 10MB per request, which is too small
+  # for KYC documents and product photo galleries. Per-file-type limits are enforced
+  # on top of this by CloudinaryService (veggofresh.uploads.* below) — these two
+  # servlet-level values just need to be >= the largest per-file limit we allow, plus
+  # headroom for multi-image product uploads in a single request.
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:10MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:30MB}
+
 # ── Server ────────────────────────────────────────────────
 server:
   port: ${SERVER_PORT:8081}
@@ -91,26 +103,6 @@ veggofresh:
     # Provide via FIREBASE_SERVICE_ACCOUNT_PATH env var in deployment.
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
-
-  # ── WebSocket / STOMP ─────────────────────────────────────
-  websocket:
-    # Origin patterns allowed for the /ws handshake (raw STOMP + SockJS).
-    # Lock this down in production via WS_ALLOWED_ORIGIN_PATTERNS, e.g.
-    # "http://veggofresh.in,https://veggofresh.in".
-    allowed-origin-patterns: ${WS_ALLOWED_ORIGIN_PATTERNS:*}
-
-  # ── Razorpay ──────────────────────────────────────────────
-  razorpay:
-    # ⚠ Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET env vars in all environments.
-    # Test keys start with rzp_test_, live keys start with rzp_live_
-    key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
-    key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
-    # Webhook secret is configured in Razorpay Dashboard → Webhooks → Secret
-    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=}
-    # payouts-enabled becomes true once Razorpay Route KYC is approved
-    payouts-enabled: ${RAZORPAY_PAYOUTS_ENABLED:false}
-    # Platform commission % deducted from vendor settlement (e.g. 10 = 10%)
-    platform-commission-percent: ${RAZORPAY_PLATFORM_COMMISSION_PERCENT:10}
 
 # ── SpringDoc / Swagger ───────────────────────────────────
 springdoc:

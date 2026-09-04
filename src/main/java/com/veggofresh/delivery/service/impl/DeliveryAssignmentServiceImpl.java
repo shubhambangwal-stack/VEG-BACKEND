@@ -23,9 +23,10 @@ import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
-import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import com.veggofresh.vendor.service.ShopLookupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -82,7 +83,7 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     private final EarningRecordRepository earningRecordRepository;
     private final CustomerOrderService customerOrderService;
     private final UserLookupService userLookupService;
-    private final MockFileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
     private final PlatformSettingsService platformSettingsService;
     private final PaymentService paymentService;
     private final ShopLookupService shopLookupService;
@@ -281,21 +282,30 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
             throw new BusinessException("DELIVERY_PROOF_PHOTO_REQUIRED", "A delivery photo is required", HttpStatus.BAD_REQUEST);
         }
 
-        String photoUrl = fileStorageService.store(photo, "delivery-proof/" + assignment.getId());
-
         DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
                 .orElseGet(() -> {
                     DeliveryProofOfDelivery newProof = new DeliveryProofOfDelivery();
                     newProof.setAssignmentId(assignment.getId());
                     return newProof;
                 });
-        proof.setPhotoUrl(photoUrl);
+
+        // Upload the new photo first -- only swap over and delete the old one (in the
+        // rare case of a resubmission for the same assignment) once the new upload has
+        // actually succeeded.
+        CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                photo, "veggofresh/delivery-proof/" + assignment.getId());
+        String oldPublicId = proof.getPublicId();
+
+        proof.setPhotoUrl(upload.url());
+        proof.setPublicId(upload.publicId());
         proof.setDeliveredToCustomerDirectly(deliveredToCustomerDirectly);
         proof.setLeftAtFrontDoor(leftAtFrontDoor);
         proof.setPackagingIntact(packagingIntact);
         proof.setAddressVerifiedManually(addressVerifiedManually);
         proof.setNotes(notes);
         proofRepository.save(proof);
+
+        cloudinaryService.deleteQuietly(oldPublicId);
 
         return mapProofToDto(proof);
     }

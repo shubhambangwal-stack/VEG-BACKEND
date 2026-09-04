@@ -112,6 +112,14 @@ public class Shop extends BaseEntity {
     @Column(name = "store_image_url", columnDefinition = "TEXT")
     private String storeImageUrl;
 
+    /**
+     * Cloudinary public_id for {@link #storeImageUrl}, required to delete the old
+     * asset when the store photo is replaced. Internal only -- never exposed on
+     * StoreProfileResponseDto.
+     */
+    @Column(name = "store_image_public_id", length = 500)
+    private String storeImagePublicId;
+
     @Column(name = "store_bio", columnDefinition = "TEXT")
     private String storeBio;
 
@@ -126,6 +134,14 @@ public class Shop extends BaseEntity {
     // (the storefront photo shown to customers).
     @Column(name = "profile_image_url", columnDefinition = "TEXT")
     private String profileImageUrl;
+
+    /**
+     * Cloudinary public_id for {@link #profileImageUrl}, required to delete the old
+     * asset when the owner's photo is replaced. Internal only -- never exposed on
+     * VendorAccountSettingsResponseDto.
+     */
+    @Column(name = "profile_image_public_id", length = 500)
+    private String profileImagePublicId;
 
     @Column(name = "business_license_number", length = 100)
     private String businessLicenseNumber;
