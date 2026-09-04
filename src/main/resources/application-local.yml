@@ -42,3 +42,9 @@ veggofresh:
     payouts-enabled: true
     # Platform commission % deducted from vendor settlement (e.g. 10 = 10%)
     platform-commission-percent: 10
+
+  # ── Cloudinary ────────────────────────────────────────────
+  cloudinary:
+    cloud-name: nn6v1iwx
+    api-key: "225473847594236"
+    api-secret: WgtN1vIiMis3kLHAZWDkO28N6nM
