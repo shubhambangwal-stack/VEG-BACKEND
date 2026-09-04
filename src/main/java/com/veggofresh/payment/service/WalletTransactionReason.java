@@ -8,6 +8,13 @@ package com.veggofresh.payment.service;
 public enum WalletTransactionReason {
     /** Order cancelled (by the customer, or -- once built -- by a re-broadcast limit hit) -- order total refunded to the customer's wallet. */
     ORDER_CANCELLED_REFUND,
+    ORDER_CANCELLED_POST_CAPTURE_REFUND,
+    ORDER_VENDOR_SETTLEMENT,
+    ORDER_DELIVERY_SETTLEMENT,
+    ORDER_PLATFORM_COMMISSION,
+    WALLET_TOP_UP,
+    PAYOUT_DEBIT,
+    PAYOUT_REVERSAL,
 
     /** Manual balance correction by an operator/admin -- not exposed via any API yet, reserved for direct DB/ops use. */
     MANUAL_ADJUSTMENT

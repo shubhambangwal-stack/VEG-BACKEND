@@ -76,6 +76,10 @@ public class SecurityConfig {
             "/api/auth/**",
             "/api/vendor/auth/**",
             "/api/public/**",
+            // WebSocket handshake is public at the HTTP-filter layer — real
+            // auth happens inside WebSocketAuthInterceptor (JWT) because
+            // SockJS clients cannot send an Authorization header.
+            "/ws/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

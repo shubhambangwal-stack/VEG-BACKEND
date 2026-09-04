@@ -140,7 +140,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
     public ProductDto getProductById(UUID catalogProductId, double latitude, double longitude) {
         ProductResponseDto product;
         try {
