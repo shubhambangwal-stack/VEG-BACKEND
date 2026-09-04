@@ -76,10 +76,20 @@ public class SecurityConfig {
             "/api/auth/**",
             "/api/vendor/auth/**",
             "/api/public/**",
+            // WebSocket handshake is public at the HTTP-filter layer — real
+            // auth happens inside WebSocketAuthInterceptor (JWT) because
+            // SockJS clients cannot send an Authorization header.
+            "/ws/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/actuator/health"
+            "/actuator/health",
+            // Spring Boot's internal error dispatch forwards to /error using
+            // the original HTTP method (PUT, POST, etc.). The JWT filter does
+            // not re-run on ERROR dispatches so the SecurityContext is always
+            // empty at that point — permit /error so the real error response
+            // is returned to the client instead of a 403.
+            "/error"
     };
 
     @Bean

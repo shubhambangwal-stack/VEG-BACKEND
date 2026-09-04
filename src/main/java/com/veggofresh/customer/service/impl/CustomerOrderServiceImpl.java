@@ -2,14 +2,19 @@ package com.veggofresh.customer.service.impl;
 
 import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
+import com.veggofresh.customer.dto.response.OrderSettlementDto;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.customer.service.OrderService;
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.service.ShopLookupService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +54,8 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
     private final PlatformSettingsService platformSettingsService;
+    private final NotificationService notificationService;
+    private final ShopLookupService shopLookupService;
 
     /**
      * Real atomic accept, now recording WHO won directly in the same statement
@@ -64,6 +71,16 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
 
         int claimed = orderRepository.atomicAccept(orderId, shopId, OrderStatus.CONFIRMED, OrderStatus.PLACED);
         if (claimed > 0) {
+            // Confirmed: notify the customer and the winning shop owner.
+            orderRepository.findById(orderId).ifPresent(order -> {
+                notificationService.send(order.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CONFIRMED,
+                        "Order confirmed", "Your order " + order.getOrderNumber() + " has been confirmed by the shop",
+                        orderData(order));
+                shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId ->
+                        notificationService.send(ownerId, NotificationRecipientRole.VENDOR, NotificationType.ORDER_ACCEPTED,
+                                "Order accepted", "You accepted order " + order.getOrderNumber(),
+                                orderData(order)));
+            });
             return;
         }
 
@@ -186,8 +203,17 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
         order.setCancelledAt(Instant.now());
         Order saved = orderRepository.save(order);
 
+        notificationService.send(saved.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CANCELLED,
+                "Your order was cancelled",
+                "Order " + saved.getOrderNumber() + " could not be fulfilled — " + reason,
+                orderData(saved));
+
         walletService.credit(saved.getUserId(), saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
                 saved.getId(), reason);
+    }
+
+    private String orderData(Order order) {
+        return "{\"orderId\":\"" + order.getId() + "\",\"orderNumber\":\"" + order.getOrderNumber() + "\"}";
     }
 
     /**
@@ -220,5 +246,19 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     public String getDeliveryOtp(UUID orderId) {
         int code = Math.abs(orderId.hashCode() % 9000) + 1000;
         return String.valueOf(code);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderSettlementDto getOrderForSettlement(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found for settlement: " + orderId));
+        return OrderSettlementDto.builder()
+                .orderId(order.getId())
+                .totalAmount(order.getTotalAmount())
+                .deliveryFee(order.getDeliveryFee())
+                .estimatedTax(order.getEstimatedTax())
+                .acceptedShopId(order.getAcceptedShopId())
+                .build();
     }
 }

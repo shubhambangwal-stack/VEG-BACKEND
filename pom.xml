@@ -65,6 +65,12 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- ===== WebSocket / STOMP (in-memory SimpleBroker, no external broker) ===== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
         <!-- ===== Validation ===== -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

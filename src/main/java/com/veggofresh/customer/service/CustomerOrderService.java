@@ -1,6 +1,7 @@
 package com.veggofresh.customer.service;
 
 import com.veggofresh.customer.dto.response.OrderResponseDto;
+import com.veggofresh.customer.dto.response.OrderSettlementDto;
 
 import java.util.List;
 import java.util.UUID;
@@ -98,4 +99,12 @@ public interface CustomerOrderService {
      * drop OTP now reaches this module properly; this method has no callers left.
      */
     String getDeliveryOtp(UUID orderId);
+
+    /**
+     * Returns the minimal settlement fields of an Order needed by the Delivery
+     * module to trigger wallet settlement after delivery completes.
+     * Throws ORDER_NOT_FOUND if the order doesn't exist.
+     * Module-boundary-safe: returns a DTO, never the Order @Entity.
+     */
+    OrderSettlementDto getOrderForSettlement(UUID orderId);
 }

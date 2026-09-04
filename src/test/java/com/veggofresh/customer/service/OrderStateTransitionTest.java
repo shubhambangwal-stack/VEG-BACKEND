@@ -14,12 +14,18 @@ public class OrderStateTransitionTest {
         assertTrue(OrderStatus.PLACED.isValidTransition(OrderStatus.CONFIRMED));
         assertTrue(OrderStatus.PLACED.isValidTransition(OrderStatus.CANCELLED));
 
-        // CONFIRMED can go to PREPARING or CANCELLED
+        // CONFIRMED can go to PREPARING, READY_FOR_PICKUP or CANCELLED
         assertTrue(OrderStatus.CONFIRMED.isValidTransition(OrderStatus.PREPARING));
+        assertTrue(OrderStatus.CONFIRMED.isValidTransition(OrderStatus.READY_FOR_PICKUP));
         assertTrue(OrderStatus.CONFIRMED.isValidTransition(OrderStatus.CANCELLED));
 
-        // PREPARING can go to OUT_FOR_DELIVERY
-        assertTrue(OrderStatus.PREPARING.isValidTransition(OrderStatus.OUT_FOR_DELIVERY));
+        // PREPARING can go to READY_FOR_PICKUP or CANCELLED
+        assertTrue(OrderStatus.PREPARING.isValidTransition(OrderStatus.READY_FOR_PICKUP));
+        assertTrue(OrderStatus.PREPARING.isValidTransition(OrderStatus.CANCELLED));
+
+        // READY_FOR_PICKUP can go to OUT_FOR_DELIVERY or CANCELLED
+        assertTrue(OrderStatus.READY_FOR_PICKUP.isValidTransition(OrderStatus.OUT_FOR_DELIVERY));
+        assertTrue(OrderStatus.READY_FOR_PICKUP.isValidTransition(OrderStatus.CANCELLED));
 
         // OUT_FOR_DELIVERY can go to DELIVERED
         assertTrue(OrderStatus.OUT_FOR_DELIVERY.isValidTransition(OrderStatus.DELIVERED));
@@ -31,8 +37,8 @@ public class OrderStateTransitionTest {
         assertFalse(OrderStatus.PLACED.isValidTransition(OrderStatus.DELIVERED));
         assertFalse(OrderStatus.PLACED.isValidTransition(OrderStatus.OUT_FOR_DELIVERY));
 
-        // PREPARING cannot be CANCELLED
-        assertFalse(OrderStatus.PREPARING.isValidTransition(OrderStatus.CANCELLED));
+        // PREPARING cannot jump directly to OUT_FOR_DELIVERY
+        assertFalse(OrderStatus.PREPARING.isValidTransition(OrderStatus.OUT_FOR_DELIVERY));
 
         // OUT_FOR_DELIVERY cannot be CANCELLED
         assertFalse(OrderStatus.OUT_FOR_DELIVERY.isValidTransition(OrderStatus.CANCELLED));

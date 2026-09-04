@@ -27,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -109,6 +110,12 @@ public class AdminProductServiceImpl implements AdminProductService {
     @Transactional(readOnly = true)
     public ProductResponseDto getProductById(UUID id) {
         return toDto(getEntity(id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ProductResponseDto> findProductById(UUID id) {
+        return productRepository.findById(id).map(this::toDto);
     }
 
     @Override

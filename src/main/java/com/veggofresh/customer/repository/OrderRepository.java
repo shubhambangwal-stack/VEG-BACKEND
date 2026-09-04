@@ -27,6 +27,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     // vendor see it as a pending request" (also needs: still PLACED, not yet accepted
     // by anyone, this shop hasn't already rejected it) or "is this vendor's own order"
     // (needs: THIS shop specifically won the accept race, not just was a candidate).
+    @Query("SELECT DISTINCT o FROM Order o JOIN o.candidateVendorIds v WHERE v = :shopId")
+    List<Order> findByShopId(@Param("shopId") UUID shopId);
 
     /**
      * The broadcast inbox — every order still awaiting a decision that this shop is
@@ -63,6 +65,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByStatusAndAcceptedShopIdIsNullAndCreatedAtBefore(OrderStatus status, java.time.Instant cutoff);
 
     Page<Order> findByUserIdAndStatus(UUID userId, OrderStatus status, Pageable pageable);
+
+    List<Order> findByStatusAndCreatedAtBefore(OrderStatus status, java.time.Instant timestamp);
 
     Page<Order> findByUserIdAndStatusIn(UUID userId, List<OrderStatus> statuses, Pageable pageable);
 

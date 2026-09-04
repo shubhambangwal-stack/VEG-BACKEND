@@ -4,8 +4,8 @@ import com.veggofresh.customer.dto.response.OrderItemResponseDto;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
-import com.veggofresh.vendor.dto.ProductDto;
-import com.veggofresh.vendor.service.ProductCatalogService;
+import com.veggofresh.admin.dto.response.ProductResponseDto;
+import com.veggofresh.admin.service.AdminProductService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderResponseMapper {
 
-    private final ProductCatalogService productCatalogService;
+    private final AdminProductService adminProductService;
 
     public OrderResponseDto mapToDto(Order order) {
         double lat = order.getLatitude();
@@ -43,7 +43,7 @@ public class OrderResponseMapper {
 
         List<OrderItemResponseDto> itemDtos = order.getItems().stream()
                 .map(item -> {
-                    ProductDto product = safeGetProduct(item.getProductId(), lat, lng);
+                    ProductResponseDto product = safeGetProduct(item.getProductId());
                     String name = product != null ? product.getName() : "Unknown Product";
                     return OrderItemResponseDto.builder()
                             .id(item.getId())
@@ -58,9 +58,9 @@ public class OrderResponseMapper {
                 .collect(Collectors.toList());
 
         List<String> itemThumbnails = order.getItems().stream()
-                .map(item -> safeGetProduct(item.getProductId(), lat, lng))
+                .map(item -> safeGetProduct(item.getProductId()))
                 .filter(p -> p != null && p.getImageUrl() != null)
-                .map(ProductDto::getImageUrl)
+                .map(ProductResponseDto::getImageUrl)
                 .limit(3)
                 .collect(Collectors.toList());
 
@@ -92,11 +92,7 @@ public class OrderResponseMapper {
                 .build();
     }
 
-    private ProductDto safeGetProduct(java.util.UUID productId, double lat, double lng) {
-        try {
-            return productCatalogService.getProductById(productId, lat, lng);
-        } catch (Exception e) {
-            return null;
-        }
+    private ProductResponseDto safeGetProduct(java.util.UUID productId) {
+        return adminProductService.findProductById(productId).orElse(null);
     }
 }

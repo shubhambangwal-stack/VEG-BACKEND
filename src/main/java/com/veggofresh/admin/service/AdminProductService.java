@@ -20,6 +20,7 @@ public interface AdminProductService {
     ProductResponseDto updateProduct(UUID id, ProductRequestDto request);
 
     ProductResponseDto getProductById(UUID id);
+    java.util.Optional<ProductResponseDto> findProductById(UUID id);
     Page<ProductResponseDto> searchProducts(String search, UUID categoryId, UUID subcategoryId, Pageable pageable);
     ProductResponseDto setActive(UUID id, boolean active);
 

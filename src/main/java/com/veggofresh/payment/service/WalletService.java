@@ -21,6 +21,12 @@ import java.util.UUID;
  */
 public interface WalletService {
 
+    /**
+     * Dedicated user ID for the platform's own wallet, used to hold platform commissions
+     * (e.g. delivery fee markup, vendor commission).
+     */
+    UUID PLATFORM_WALLET_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     /** Auto-creates a zero-balance wallet on first access, same getOrCreate pattern used everywhere else in this codebase. */
     WalletBalanceDto getBalance(UUID userId);
 

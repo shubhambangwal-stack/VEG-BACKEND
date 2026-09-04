@@ -35,11 +35,17 @@ import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.repository.RatingRepository;
 import com.veggofresh.customer.service.CartService;
 import com.veggofresh.customer.service.OrderService;
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.service.NotificationService;
+import com.veggofresh.payment.dto.PaymentHoldResponseDto;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
+import com.veggofresh.vendor.service.ShopLookupService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +63,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -91,6 +98,9 @@ public class OrderServiceImpl implements OrderService {
     private final UserLookupService userLookupService;
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
+    private final PaymentService paymentService;
+    private final NotificationService notificationService;
+    private final ShopLookupService shopLookupService;
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
@@ -110,6 +120,7 @@ public class OrderServiceImpl implements OrderService {
 
         List<OrderResponseDto> createdOrders = new ArrayList<>();
         List<CheckoutIssueDto> issues = new ArrayList<>();
+        List<Order> placedOrders = new ArrayList<>();
         int cartIndex = 1;
 
         for (Cart cart : openCarts) {
@@ -144,6 +155,7 @@ public class OrderServiceImpl implements OrderService {
             Order order = buildOrderFromCart(userId, cart, address, slot, request, liveIntersection);
             Order saved = orderRepository.save(order);
             createdOrders.add(orderResponseMapper.mapToDto(saved));
+            placedOrders.add(saved);
 
             cartService.clearCart(userId, cart.getId());
 
@@ -154,9 +166,29 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException("CHECKOUT_FAILED", "None of your carts could be checked out — please review the issues", HttpStatus.BAD_REQUEST);
         }
 
+        // PAYMENT INTEGRATION: create a single Razorpay order (hold) covering all
+        // successfully checked-out orders. The frontend uses razorpayOrderId + razorpayKeyId
+        // to open Razorpay Checkout.js. After the user pays, they call
+        // POST /api/payment/orders/verify with the 3 values from Razorpay.
+        List<UUID> orderIds = createdOrders.stream()
+                .map(OrderResponseDto::getId)
+                .collect(Collectors.toList());
+        List<java.math.BigDecimal> orderAmounts = createdOrders.stream()
+                .map(OrderResponseDto::getTotalAmount)
+                .collect(Collectors.toList());
+        PaymentHoldResponseDto paymentHold = paymentService.createHold(userId, orderIds, orderAmounts);
+
+        // Order-placed notifications fire only AFTER the payment hold succeeded
+        // so they never outlive a rolled-back checkout.
+        placedOrders.forEach(order -> notifyOrderPlaced(userId, order));
+
+        log.info("Checkout complete: {} order(s) created, Razorpay order={}, total={}",
+                createdOrders.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
+
         return CheckoutResultDto.builder()
                 .orders(createdOrders)
                 .issues(issues)
+                .paymentHold(paymentHold)
                 .build();
     }
 
@@ -377,6 +409,18 @@ public class OrderServiceImpl implements OrderService {
         rating.setComment(request.getComment());
 
         Rating saved = ratingRepository.save(rating);
+
+        // REVIEW RECEIVED → the shop that actually fulfilled this order.
+        UUID shopId = order.getAcceptedShopId();
+        if (shopId != null) {
+            shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId ->
+                    notificationService.send(ownerId, NotificationRecipientRole.VENDOR, NotificationType.REVIEW_RECEIVED,
+                            "New review received",
+                            "A customer rated " + request.getRatingValue() + "/5 for order " + order.getOrderNumber(),
+                            "{\"orderId\":\"" + orderId + "\",\"rating\":" + request.getRatingValue()
+                                    + ",\"comment\":" + com.veggofresh.notification.util.NotificationJson.str(request.getComment()) + "}"));
+        }
+
         return RatingResponseDto.builder()
                 .id(saved.getId())
                 .orderId(saved.getOrderId())
@@ -404,7 +448,77 @@ public class OrderServiceImpl implements OrderService {
         else if (newStatus == OrderStatus.DELIVERED) order.setDeliveredAt(Instant.now());
         else if (newStatus == OrderStatus.CANCELLED) order.setCancelledAt(Instant.now());
 
-        return orderResponseMapper.mapToDto(orderRepository.save(order));
+        Order saved = orderRepository.save(order);
+
+        notifyCustomerOrderStatusChange(saved, newStatus);
+
+        return orderResponseMapper.mapToDto(saved);
+    }
+
+    /**
+     * Notify the customer on every forward order-status change. This is the ONE
+     * funnel every status change passes through (vendor updates via
+     * CustomerOrderService, delivery pickup/delivery completion, system cancel),
+     * so hooking here guarantees a single, consistent customer notification per
+     * transition with no double-fires from the various callers.
+     */
+    private void notifyCustomerOrderStatusChange(Order order, OrderStatus newStatus) {
+        NotificationType type;
+        String title;
+        switch (newStatus) {
+            case PREPARING -> {
+                type = NotificationType.ORDER_PACKED;
+                title = "Your order is being prepared";
+            }
+            case READY_FOR_PICKUP -> {
+                type = NotificationType.ORDER_READY_FOR_PICKUP;
+                title = "Your order is packed & ready";
+            }
+            case OUT_FOR_DELIVERY -> {
+                type = NotificationType.ORDER_OUT_FOR_DELIVERY;
+                title = "Your order is out for delivery";
+            }
+            case DELIVERED -> {
+                type = NotificationType.ORDER_DELIVERED;
+                title = "Your order has been delivered";
+            }
+            case CONFIRMED -> {
+                type = NotificationType.ORDER_CONFIRMED;
+                title = "Your order was confirmed";
+            }
+            case CANCELLED -> {
+                type = NotificationType.ORDER_CANCELLED;
+                title = "Your order was cancelled";
+            }
+            default -> {
+                return; // PLACED — nothing to announce
+            }
+        }
+        notificationService.send(order.getUserId(), NotificationRecipientRole.CUSTOMER, type, title,
+                "Order " + order.getOrderNumber() + " — " + title.toLowerCase(Locale.ROOT), orderData(order));
+    }
+
+    /**
+     * Order placed: ping the customer (ORDER_PLACED) and every shop whose
+     * candidate list the order was broadcast to (NEW_ORDER_REQUEST — the vendor
+     * "new order inbox" ping).
+     */
+    private void notifyOrderPlaced(UUID customerUserId, Order saved) {
+        notificationService.send(customerUserId, NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_PLACED,
+                "Order placed successfully", "Your order " + saved.getOrderNumber() + " has been placed — a nearby shop will confirm it shortly",
+                orderData(saved));
+
+        if (saved.getCandidateVendorIds() != null) {
+            saved.getCandidateVendorIds().forEach(shopId ->
+                    shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId ->
+                            notificationService.send(ownerId, NotificationRecipientRole.VENDOR, NotificationType.NEW_ORDER_REQUEST,
+                                    "New order request", "Order " + saved.getOrderNumber() + " is awaiting your shop's decision",
+                                    orderData(saved))));
+        }
+    }
+
+    private String orderData(Order order) {
+        return "{\"orderId\":\"" + order.getId() + "\",\"orderNumber\":\"" + order.getOrderNumber() + "\"}";
     }
 
     /**
@@ -427,6 +541,10 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.CANCELLED);
         order.setCancelledAt(Instant.now());
         Order saved = orderRepository.save(order);
+
+        notificationService.send(saved.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CANCELLED,
+                "Your order was cancelled", "Order " + saved.getOrderNumber() + " was cancelled — your refund is on the way",
+                orderData(saved));
 
         walletService.credit(userId, saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
                 saved.getId(), "Refund for cancelled order " + saved.getOrderNumber());
