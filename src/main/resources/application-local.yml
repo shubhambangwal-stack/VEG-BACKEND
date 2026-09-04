@@ -40,6 +40,8 @@ veggofresh:
     webhook-secret: YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=
     # payouts-enabled becomes true once Razorpay Route KYC is approved
     payouts-enabled: true
+    # RazorpayX Virtual Business Account Number for Payouts
+    account-number: "2323230073112811"
     # Platform commission % deducted from vendor settlement (e.g. 10 = 10%)
     platform-commission-percent: 10
 

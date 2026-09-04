@@ -38,7 +38,12 @@ public class RazorpayProperties {
     /** Platform commission percentage (e.g. 10 = 10%). Used in settlement splits. */
     private int platformCommissionPercent = 10;
 
+    /** RazorpayX Virtual Business Account Number for payouts. */
+    private String accountNumber = "2323230073112811";
+
     private String ordersApiBaseUrl = "https://api.razorpay.com/v1/orders";
     private String paymentsApiBaseUrl = "https://api.razorpay.com/v1/payments";
+    private String contactsApiBaseUrl = "https://api.razorpay.com/v1/contacts";
+    private String fundAccountsApiBaseUrl = "https://api.razorpay.com/v1/fund_accounts";
     private String payoutsApiBaseUrl = "https://api.razorpay.com/v1/payouts";
 }

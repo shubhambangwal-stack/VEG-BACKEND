@@ -15,4 +15,6 @@ public interface PayoutRequestRepository extends JpaRepository<PayoutRequest, UU
     Page<PayoutRequest> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
     Page<PayoutRequest> findByStatusOrderByCreatedAtDesc(PayoutRequestStatus status, Pageable pageable);
+
+    java.util.Optional<PayoutRequest> findByRazorpayPayoutId(String razorpayPayoutId);
 }

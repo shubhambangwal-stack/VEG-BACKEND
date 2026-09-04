@@ -18,3 +18,13 @@ logging:
   level:
     com.veggofresh: DEBUG
     org.springframework.security: INFO
+
+veggofresh:
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
+    key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=}
+    payouts-enabled: ${RAZORPAY_PAYOUTS_ENABLED:true}
+    account-number: ${RAZORPAY_ACCOUNT_NUMBER:2323230073112811}
+    platform-commission-percent: 10
+
