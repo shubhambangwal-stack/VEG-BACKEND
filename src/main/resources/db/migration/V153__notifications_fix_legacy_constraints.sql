@@ -9,7 +9,12 @@
 -- on them, causing Hibernate inserts to fail.
 -- ============================================================
 
-ALTER TABLE notifications ALTER COLUMN recipient_type DROP NOT NULL;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='notifications' AND column_name='recipient_type') THEN
+        ALTER TABLE notifications ALTER COLUMN recipient_type DROP NOT NULL;
+    END IF;
+END $$;
 
 -- If there are other legacy columns with NOT NULL constraints, drop them too
 DO $$

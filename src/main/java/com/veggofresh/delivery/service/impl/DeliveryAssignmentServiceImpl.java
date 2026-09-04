@@ -3,6 +3,7 @@ package com.veggofresh.delivery.service.impl;
 import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
+import com.veggofresh.customer.dto.response.OrderSettlementDto;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
 import com.veggofresh.delivery.dto.response.ProofOfDeliveryResponseDto;
@@ -23,7 +24,9 @@ import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
 import com.veggofresh.delivery.service.MockFileStorageService;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.service.ShopLookupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -80,6 +84,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     private final UserLookupService userLookupService;
     private final MockFileStorageService fileStorageService;
     private final PlatformSettingsService platformSettingsService;
+    private final PaymentService paymentService;
+    private final ShopLookupService shopLookupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -314,6 +320,46 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.DELIVERED);
 
         customerOrderService.updateOrderStatus(orderId, "DELIVERED");
+
+        // Compute delivery fee using the same formula as recordEarning() for consistency.
+        double distanceKm = haversineKm(
+                assignment.getPickupLatitude(), assignment.getPickupLongitude(),
+                assignment.getDropLatitude(), assignment.getDropLongitude());
+        BigDecimal distanceFare = RATE_PER_KM
+                .multiply(BigDecimal.valueOf(distanceKm))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal deliveryEarning = BASE_PAY.add(distanceFare);
+
+        // Fetch settlement fields from the Order (module-boundary-safe via CustomerOrderService).
+        OrderSettlementDto settlement = customerOrderService.getOrderForSettlement(orderId);
+
+        // Compute order subtotal = totalAmount − deliveryFee − tax (vendor commission basis).
+        BigDecimal orderDeliveryFee = settlement.getDeliveryFee() != null ? settlement.getDeliveryFee() : BigDecimal.ZERO;
+        BigDecimal orderTax = settlement.getEstimatedTax() != null ? settlement.getEstimatedTax() : BigDecimal.ZERO;
+        BigDecimal orderSubtotal = settlement.getTotalAmount()
+                .subtract(orderDeliveryFee)
+                .subtract(orderTax);
+        if (orderSubtotal.compareTo(BigDecimal.ZERO) < 0) {
+            orderSubtotal = BigDecimal.ZERO; // safety guard — should never happen
+        }
+
+        // Resolve vendor user id from the shop that won this order.
+        UUID vendorUserId = settlement.getAcceptedShopId() != null
+                ? shopLookupService.findOwnerUserIdByShopId(settlement.getAcceptedShopId()).orElse(null)
+                : null;
+
+        if (vendorUserId == null) {
+            log.warn("completeDelivery: could not resolve vendor userId for orderId={} (acceptedShopId={}) -- skipping vendor wallet credit",
+                    orderId, settlement.getAcceptedShopId());
+        }
+
+        // Credit vendor, delivery partner, and platform wallets.
+        paymentService.onDeliveryCompleted(
+                orderId,
+                orderSubtotal,
+                deliveryEarning,
+                vendorUserId != null ? vendorUserId : com.veggofresh.payment.service.WalletService.PLATFORM_WALLET_USER_ID,
+                assignment.getDeliveryPartnerUserId());
 
         recordEarning(assignment);
 
