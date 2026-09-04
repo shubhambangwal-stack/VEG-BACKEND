@@ -13,6 +13,7 @@ package com.veggofresh.payment.entity;
 public enum PayoutRequestStatus {
     PENDING,
     APPROVED,
+    PROCESSING,
     REJECTED,
     COMPLETED,
     FAILED

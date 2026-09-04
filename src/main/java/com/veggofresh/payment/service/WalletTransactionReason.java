@@ -15,6 +15,9 @@ public enum WalletTransactionReason {
     WALLET_TOP_UP,
     PAYOUT_DEBIT,
     PAYOUT_REVERSAL,
+    PAYOUT_REQUEST_DEBIT,
+    PAYOUT_REJECTED_REFUND,
+    PAYOUT_FAILED_REFUND,
 
     /** Manual balance correction by an operator/admin -- not exposed via any API yet, reserved for direct DB/ops use. */
     MANUAL_ADJUSTMENT

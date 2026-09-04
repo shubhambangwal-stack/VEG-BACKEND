@@ -38,12 +38,21 @@ public class PayoutRequest extends BaseEntity {
     @Column(nullable = false, length = 30)
     private PayoutRequestStatus status = PayoutRequestStatus.PENDING;
 
-    /** Razorpay Payout id once the real transfer is initiated (null until KYC enabled). */
+    @Column(name = "user_role", nullable = false, length = 20)
+    private String userRole;
+
+    @Column(name = "bank_account_id")
+    private UUID bankAccountId;
+
+    /** Razorpay Payout id once the real transfer is initiated. */
     @Column(name = "razorpay_payout_id", length = 64)
     private String razorpayPayoutId;
 
     @Column(name = "admin_notes", length = 500)
     private String adminNotes;
+
+    @Column(name = "failure_reason", length = 500)
+    private String failureReason;
 
     @Column(name = "processed_at")
     private Instant processedAt;
