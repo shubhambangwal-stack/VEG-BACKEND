@@ -11,9 +11,11 @@ import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -29,7 +31,9 @@ import java.util.UUID;
  *
  * <pre>
  * GET  /api/customer/profile          — fetch (or auto-create) profile
- * PUT  /api/customer/profile          — update fullName and/or avatarUrl (PATCH semantics)
+ * PUT  /api/customer/profile          — update fullName, email, and/or avatar in one
+ *                                        multipart/form-data call (PATCH semantics —
+ *                                        only the parts you send are changed)
  * GET  /api/customer/profile/summary  — aggregated stats card
  *
  * GET    /api/customer/addresses      — list addresses
@@ -37,6 +41,9 @@ import java.util.UUID;
  * PUT    /api/customer/addresses/{id} — update address
  * DELETE /api/customer/addresses/{id} — soft-delete address
  * </pre>
+ *
+ * The one-time name-only onboarding step lives separately in
+ * {@link CustomerOnboardingController} — see {@code PUT /api/customer/onboarding/basic-info}.
  */
 @RestController
 @RequestMapping("/api/customer")
@@ -53,9 +60,16 @@ public class CustomerProfileController {
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile retrieved successfully"));
     }
 
-    @PutMapping("/profile")
+    /**
+     * Updates fullName, email, and/or avatar in a single call. Send this as
+     * {@code multipart/form-data} with any combination of the {@code fullName} (text),
+     * {@code email} (text), and {@code avatar} (file) parts — anything you omit is left
+     * unchanged. Sending just {@code avatar} updates only the avatar, exactly like
+     * sending just {@code fullName} updates only the name.
+     */
+    @PutMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<CustomerProfileResponseDto>> updateProfile(
-            @Valid @RequestBody CustomerProfileUpdateRequestDto request) {
+            @Valid @ModelAttribute CustomerProfileUpdateRequestDto request) {
         CustomerProfileResponseDto profile =
                 customerProfileService.updateProfile(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(profile, "Customer profile updated successfully"));

@@ -36,7 +36,8 @@ import java.math.BigDecimal;
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class PlatformSettingsServiceImpl implements PlatformSettingsService {
+public class
+PlatformSettingsServiceImpl implements PlatformSettingsService {
 
     public static final double MAX_DELIVERY_RADIUS_KM = 50.0;
     public static final BigDecimal MAX_PLATFORM_COMMISSION_PERCENT = BigDecimal.valueOf(50.0);

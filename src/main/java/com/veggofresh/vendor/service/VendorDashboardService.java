@@ -1,9 +1,9 @@
 package com.veggofresh.vendor.service;
 
 import com.veggofresh.admin.service.AdminProductService;
-import com.veggofresh.customer.entity.Order;
+import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.entity.OrderStatus;
-import com.veggofresh.customer.repository.OrderRepository;
+import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.response.DashboardSummaryResponseDto;
 import com.veggofresh.vendor.dto.response.RecentOrderDto;
@@ -24,10 +24,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * NOT YET FIXED: still directly imports Customer's Order/OrderStatus entities and
- * injects Customer's OrderRepository directly instead of going through
- * CustomerOrderService -- flagged as a boundary violation in the Vendor audit,
- * deliberately deferred past the onboarding phase. See NOTES_VENDOR.md.
+ * FIXED this round: was directly injecting Customer's OrderRepository/Order
+ * entity, bypassing CustomerOrderService -- same violation VendorReportService
+ * had, fixed the same way and for the same reason (OrderRepository.findByShopId()
+ * was removed as part of the accept/reject broadcast redesign). Now goes through
+ * CustomerOrderService.getAcceptedOrdersForShop(), which also more correctly
+ * reflects orders this shop actually won rather than every broadcast candidate.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,7 +38,7 @@ public class VendorDashboardService {
     private final ShopRepository shopRepository;
     private final VendorListingRepository vendorListingRepository;
     private final AdminProductService adminProductService;
-    private final OrderRepository orderRepository;
+    private final CustomerOrderService customerOrderService;
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponseDto getDashboardSummary(UUID ownerUserId) {
@@ -49,7 +51,7 @@ public class VendorDashboardService {
         // contract outright. See NOTES_VENDOR.md.
         long outOfStockCount = 0;
 
-        List<Order> allShopOrders = orderRepository.findByAcceptedShopId(shop.getId());
+        List<OrderResponseDto> allShopOrders = customerOrderService.getAcceptedOrdersForShop(shop.getId());
 
         Instant startOfToday = Instant.now().truncatedTo(ChronoUnit.DAYS);
 
@@ -73,11 +75,11 @@ public class VendorDashboardService {
         }
 
         long activeOrdersCount = allShopOrders.stream()
-                .filter(order -> order.getStatus() != OrderStatus.DELIVERED && order.getStatus() != OrderStatus.CANCELLED)
+                .filter(order -> !OrderStatus.DELIVERED.name().equals(order.getStatus()) && !OrderStatus.CANCELLED.name().equals(order.getStatus()))
                 .count();
 
         long pendingPickupCount = allShopOrders.stream()
-                .filter(order -> order.getStatus() == OrderStatus.CONFIRMED || order.getStatus() == OrderStatus.PREPARING)
+                .filter(order -> OrderStatus.CONFIRMED.name().equals(order.getStatus()) || OrderStatus.PREPARING.name().equals(order.getStatus()))
                 .count();
 
         List<Integer> performanceTrend = new ArrayList<>();
@@ -109,7 +111,7 @@ public class VendorDashboardService {
                 .build();
     }
 
-    private BigDecimal calculateShopRevenueForOrder(Order order, UUID shopId) {
+    private BigDecimal calculateShopRevenueForOrder(OrderResponseDto order, UUID shopId) {
         return order.getItems().stream()
                 .map(item -> {
                     if (vendorListingRepository.findByShopIdAndCatalogProductId(shopId, item.getProductId()).isPresent()) {
@@ -120,7 +122,7 @@ public class VendorDashboardService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private RecentOrderDto mapToRecentOrderDto(Order order, UUID shopId) {
+    private RecentOrderDto mapToRecentOrderDto(OrderResponseDto order, UUID shopId) {
         String itemsSummary = order.getItems().stream()
                 .map(item -> {
                     String name = resolveProductName(item.getProductId());
@@ -135,7 +137,7 @@ public class VendorDashboardService {
                 .itemsSummary(itemsSummary)
                 .timeAgo(formatTimeAgo(order.getCreatedAt()))
                 .amount(shopAmount.doubleValue())
-                .status(order.getStatus().name().toLowerCase())
+                .status(order.getStatus().toLowerCase())
                 .build();
     }
 

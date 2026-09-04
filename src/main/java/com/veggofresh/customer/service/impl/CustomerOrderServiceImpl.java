@@ -2,6 +2,7 @@ package com.veggofresh.customer.service.impl;
 
 import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
+import com.veggofresh.customer.dto.response.OrderSettlementDto;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
@@ -236,5 +237,19 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     public String getDeliveryOtp(UUID orderId) {
         int code = Math.abs(orderId.hashCode() % 9000) + 1000;
         return String.valueOf(code);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderSettlementDto getOrderForSettlement(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found for settlement: " + orderId));
+        return OrderSettlementDto.builder()
+                .orderId(order.getId())
+                .totalAmount(order.getTotalAmount())
+                .deliveryFee(order.getDeliveryFee())
+                .estimatedTax(order.getEstimatedTax())
+                .acceptedShopId(order.getAcceptedShopId())
+                .build();
     }
 }
