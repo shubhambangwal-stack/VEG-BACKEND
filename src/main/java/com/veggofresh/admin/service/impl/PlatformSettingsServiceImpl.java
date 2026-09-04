@@ -86,6 +86,10 @@ public class PlatformSettingsServiceImpl implements PlatformSettingsService {
         settings.setDeliveryAcceptTimeoutSeconds(request.getDeliveryAcceptTimeoutSeconds());
         settings.setRebroadcastMaxRounds(request.getRebroadcastMaxRounds());
         settings.setRebroadcastMaxElapsedMinutes(request.getRebroadcastMaxElapsedMinutes());
+        // Deliberately NO ceiling check here, unlike every field above -- confirmed with
+        // the team this one has no hard upper bound; Bean Validation's @Min(1) on the
+        // request DTO is the only guard (must be positive).
+        settings.setOtpExpiryMinutes(request.getOtpExpiryMinutes());
 
         return mapToDto(platformSettingsRepository.save(settings));
     }
@@ -126,6 +130,12 @@ public class PlatformSettingsServiceImpl implements PlatformSettingsService {
         return getOrCreateSettings().getRebroadcastMaxElapsedMinutes();
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public int getOtpExpiryMinutes() {
+        return getOrCreateSettings().getOtpExpiryMinutes();
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────────
@@ -145,6 +155,7 @@ public class PlatformSettingsServiceImpl implements PlatformSettingsService {
                 .deliveryAcceptTimeoutSeconds(settings.getDeliveryAcceptTimeoutSeconds())
                 .rebroadcastMaxRounds(settings.getRebroadcastMaxRounds())
                 .rebroadcastMaxElapsedMinutes(settings.getRebroadcastMaxElapsedMinutes())
+                .otpExpiryMinutes(settings.getOtpExpiryMinutes())
                 .ceilings(PlatformSettingsCeilingsDto.builder()
                         .maxDeliveryRadiusKm(MAX_DELIVERY_RADIUS_KM)
                         .maxPlatformCommissionPercent(MAX_PLATFORM_COMMISSION_PERCENT)

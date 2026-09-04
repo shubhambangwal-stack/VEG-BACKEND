@@ -7,8 +7,9 @@ import com.veggofresh.delivery.entity.DeliveryDocumentType;
 import com.veggofresh.delivery.repository.DeliveryDocumentRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.service.DeliveryDocumentService;
-import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,7 +28,7 @@ public class DeliveryDocumentServiceImpl implements DeliveryDocumentService {
 
     private final DeliveryDocumentRepository documentRepository;
     private final DeliveryPartnerProfileRepository partnerRepository;
-    private final MockFileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     public List<DeliveryDocumentResponseDto> getDocuments(UUID userId) {
@@ -65,8 +66,14 @@ public class DeliveryDocumentServiceImpl implements DeliveryDocumentService {
                     return newDoc;
                 });
 
-        String fileUrl = fileStorageService.store(file, "delivery-documents/" + userId);
-        doc.setFileUrl(fileUrl);
+        // Upload the new document first -- only swap over and delete the old one (if this
+        // document type was previously uploaded) once the new upload has actually succeeded.
+        CloudinaryUploadResult upload = cloudinaryService.uploadDocument(
+                file, "veggofresh/delivery-documents/" + userId + "/" + type.name());
+        String oldPublicId = doc.getPublicId();
+
+        doc.setFileUrl(upload.url());
+        doc.setPublicId(upload.publicId());
         // Any (re-)upload resets to PENDING -- real verification is a manual/admin
         // step that doesn't exist yet. Nothing auto-flips this to VERIFIED.
         doc.setStatus(DeliveryDocumentStatus.PENDING);
@@ -74,7 +81,9 @@ public class DeliveryDocumentServiceImpl implements DeliveryDocumentService {
             doc.setExpiryDate(expiryDate);
         }
 
-        return mapToDto(documentRepository.save(doc));
+        DeliveryDocumentResponseDto response = mapToDto(documentRepository.save(doc));
+        cloudinaryService.deleteQuietly(oldPublicId);
+        return response;
     }
 
     private void requirePartnerExists(UUID userId) {

@@ -49,4 +49,14 @@ public class PlatformSettings extends BaseEntity {
     /** Max total elapsed time (minutes) across ALL re-broadcast rounds combined, independent of the max-rounds cap above -- whichever limit is hit first wins. */
     @Column(name = "rebroadcast_max_elapsed_minutes", nullable = false)
     private int rebroadcastMaxElapsedMinutes = 30;
+
+    /**
+     * How long a pickup or drop OTP (Delivery module) stays valid before it must be
+     * regenerated. Deliberately has NO hard ceiling in PlatformSettingsServiceImpl,
+     * unlike every other field on this entity -- Admin's own call, whatever value is
+     * set is used as-is. Only a basic floor (must be positive) is enforced, as plain
+     * input validation rather than a business ceiling.
+     */
+    @Column(name = "otp_expiry_minutes", nullable = false)
+    private int otpExpiryMinutes = 120;
 }

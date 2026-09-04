@@ -22,8 +22,9 @@ import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
-import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -57,7 +58,9 @@ import java.util.stream.Collectors;
 @Transactional
 public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
-    private static final int OTP_EXPIRY_MINUTES = 15;
+    // OTP expiry is now Admin-configurable (PlatformSettings.otpExpiryMinutes, no
+    // ceiling) -- see issuePickupOtp()/issueDropOtp(). Previously a hardcoded
+    // OTP_EXPIRY_MINUTES = 15 constant here.
     private static final int MAX_OTP_ATTEMPTS = 5;
     private static final BigDecimal BASE_PAY = BigDecimal.valueOf(20);
     private static final BigDecimal RATE_PER_KM = BigDecimal.valueOf(8);
@@ -77,7 +80,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private final EarningRecordRepository earningRecordRepository;
     private final CustomerOrderService customerOrderService;
     private final UserLookupService userLookupService;
-    private final MockFileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
     private final PlatformSettingsService platformSettingsService;
 
     @Override
@@ -215,7 +218,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.PICKED_UP);
 
-        issueDropOtp(assignment);
+        issueDropOtp(assignment, orderId);
         customerOrderService.updateOrderStatus(orderId, "OUT_FOR_DELIVERY");
 
         return mapToLightDto(assignment);
@@ -274,21 +277,30 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
             throw new BusinessException("DELIVERY_PROOF_PHOTO_REQUIRED", "A delivery photo is required", HttpStatus.BAD_REQUEST);
         }
 
-        String photoUrl = fileStorageService.store(photo, "delivery-proof/" + assignment.getId());
-
         DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
                 .orElseGet(() -> {
                     DeliveryProofOfDelivery newProof = new DeliveryProofOfDelivery();
                     newProof.setAssignmentId(assignment.getId());
                     return newProof;
                 });
-        proof.setPhotoUrl(photoUrl);
+
+        // Upload the new photo first -- only swap over and delete the old one (in the
+        // rare case of a resubmission for the same assignment) once the new upload has
+        // actually succeeded.
+        CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                photo, "veggofresh/delivery-proof/" + assignment.getId());
+        String oldPublicId = proof.getPublicId();
+
+        proof.setPhotoUrl(upload.url());
+        proof.setPublicId(upload.publicId());
         proof.setDeliveredToCustomerDirectly(deliveredToCustomerDirectly);
         proof.setLeftAtFrontDoor(leftAtFrontDoor);
         proof.setPackagingIntact(packagingIntact);
         proof.setAddressVerifiedManually(addressVerifiedManually);
         proof.setNotes(notes);
         proofRepository.save(proof);
+
+        cloudinaryService.deleteQuietly(oldPublicId);
 
         return mapProofToDto(proof);
     }
@@ -503,14 +515,17 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         return assignment;
     }
 
-    /** NEW THIS ROUND -- issued right after a successful accept, mirroring how the drop OTP is issued right after pickup. */
+    /** Issued right after a successful accept, mirroring how the drop OTP is issued right after pickup.
+     *  Also called directly by regeneratePickupOtp() -- same logic, safe to call again on the same
+     *  assignment since it always overwrites otpCode/expiresAt/verified/attempts regardless of whether
+     *  a row already existed. */
     private void issuePickupOtp(DeliveryAssignment assignment) {
         String otpCode = generateSixDigitOtp();
         DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.PICKUP).orElseGet(DeliveryOtp::new);
         otp.setAssignmentId(assignment.getId());
         otp.setType(DeliveryOtpType.PICKUP);
         otp.setOtpCode(otpCode);
-        otp.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        otp.setExpiresAt(Instant.now().plus(platformSettingsService.getOtpExpiryMinutes(), ChronoUnit.MINUTES));
         otp.setVerified(false);
         otp.setAttempts(0);
         otpRepository.save(otp);
@@ -522,19 +537,54 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         log.info("MOCK — Delivery pickup OTP {} issued for assignment {}", otpCode, assignment.getId());
     }
 
-    /** Renamed from issueDeliveryOtp for clarity now that there's also a pickup OTP -- behavior unchanged except 4->6 digits. */
-    private void issueDropOtp(DeliveryAssignment assignment) {
+    /** Renamed from issueDeliveryOtp for clarity now that there's also a pickup OTP -- behavior unchanged except 4->6 digits.
+     *  Also called directly by regenerateDropOtp() -- same logic, safe to call again on the same assignment.
+     *  NEW: pushes the code to the Customer's order the instant it's generated (initial issuance at
+     *  pickup, or a later regeneration) via CustomerOrderService.setDropOtpAvailable() -- the customer's
+     *  track screen and dedicated drop-OTP endpoint both just read that same field, so this one push
+     *  keeps both in sync automatically, no matter which path (issue vs. regenerate) produced the code. */
+    private void issueDropOtp(DeliveryAssignment assignment, UUID orderId) {
         String otpCode = generateSixDigitOtp();
         DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.DROP).orElseGet(DeliveryOtp::new);
         otp.setAssignmentId(assignment.getId());
         otp.setType(DeliveryOtpType.DROP);
         otp.setOtpCode(otpCode);
-        otp.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        otp.setExpiresAt(Instant.now().plus(platformSettingsService.getOtpExpiryMinutes(), ChronoUnit.MINUTES));
         otp.setVerified(false);
         otp.setAttempts(0);
         otpRepository.save(otp);
 
+        customerOrderService.setDropOtpAvailable(orderId, otpCode);
+
         log.info("MOCK — Delivery drop OTP {} issued for assignment {}", otpCode, assignment.getId());
+    }
+
+    @Override
+    public void regeneratePickupOtp(UUID deliveryPartnerUserId, UUID orderId) {
+        DeliveryAssignment assignment = assignmentRepository
+                .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.ACCEPTED, DeliveryAssignmentStatus.ARRIVED_AT_STORE))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment awaiting a pickup OTP for this order", HttpStatus.NOT_FOUND));
+
+        if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+        }
+
+        issuePickupOtp(assignment);
+    }
+
+    @Override
+    public void regenerateDropOtp(UUID deliveryPartnerUserId, UUID orderId) {
+        DeliveryAssignment assignment = assignmentRepository
+                .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment awaiting a drop OTP for this order", HttpStatus.NOT_FOUND));
+
+        if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+        }
+
+        issueDropOtp(assignment, orderId);
     }
 
     private String generateSixDigitOtp() {

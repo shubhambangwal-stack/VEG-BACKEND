@@ -342,7 +342,16 @@ public class OrderServiceImpl implements OrderService {
                 .deliveryLocationNote(order.getDeliveryLocationNote())
                 .deliveredAt(order.getDeliveredAt())
                 .hasBeenRated(rated)
+                .dropOtp(order.getDropOtp())
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public String getDropOtp(UUID userId, UUID orderId) {
+        Order order = orderRepository.findByIdAndUserId(orderId, userId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found", HttpStatus.NOT_FOUND));
+        return order.getDropOtp();
     }
 
     @Override

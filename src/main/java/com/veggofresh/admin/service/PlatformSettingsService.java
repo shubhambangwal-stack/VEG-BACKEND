@@ -29,4 +29,7 @@ public interface PlatformSettingsService {
     int getRebroadcastMaxRounds();
 
     int getRebroadcastMaxElapsedMinutes();
+
+    /** Used by Delivery when issuing/regenerating pickup and drop OTPs. No hard ceiling -- whatever Admin sets is used as-is. */
+    int getOtpExpiryMinutes();
 }

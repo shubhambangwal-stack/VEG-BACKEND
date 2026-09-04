@@ -49,6 +49,23 @@ public interface DeliveryAssignmentService {
     /** Pre-existing drop-OTP verification, unchanged in behavior -- now 6 digits instead of 4, see NOTES_DELIVERY.md. */
     void verifyDeliveryOtp(UUID deliveryPartnerUserId, UUID orderId, String otp);
 
+    /**
+     * NEW -- lets the delivery partner request a fresh pickup OTP (e.g. the original
+     * expired before they reached the store). Callable while ACCEPTED or
+     * ARRIVED_AT_STORE. Overwrites the same DeliveryOtp row (resets code, expiry,
+     * verified, attempts) -- Vendor's existing GET pickup-otp endpoint picks up the
+     * new value on its next call automatically, since that endpoint is a live read.
+     */
+    void regeneratePickupOtp(UUID deliveryPartnerUserId, UUID orderId);
+
+    /**
+     * NEW -- same idea for the drop OTP. Callable while PICKED_UP or ARRIVED_AT_DROP.
+     * Immediately re-pushes the new code to the customer's order via
+     * CustomerOrderService.setDropOtpAvailable() -- both the customer's track response
+     * and the dedicated GET drop-OTP endpoint reflect the new code right away.
+     */
+    void regenerateDropOtp(UUID deliveryPartnerUserId, UUID orderId);
+
     ProofOfDeliveryResponseDto submitProofOfDelivery(UUID deliveryPartnerUserId, UUID orderId, MultipartFile photo,
                                                        boolean deliveredToCustomerDirectly, boolean leftAtFrontDoor,
                                                        boolean packagingIntact, boolean addressVerifiedManually, String notes);

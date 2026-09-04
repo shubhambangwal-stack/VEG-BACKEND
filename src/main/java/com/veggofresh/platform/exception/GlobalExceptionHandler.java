@@ -10,6 +10,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
 
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
  * <table>
  *   <tr><th>Exception</th><th>HTTP Status</th><th>Notes</th></tr>
  *   <tr><td>MethodArgumentNotValidException</td><td>400</td><td>Bean validation failures; field errors concatenated</td></tr>
+ *   <tr><td>MaxUploadSizeExceededException</td><td>400</td><td>Multipart file/request exceeded configured size limit</td></tr>
  *   <tr><td>BusinessException</td><td>varies</td><td>Status determined by the exception itself</td></tr>
  *   <tr><td>EntityNotFoundException</td><td>404</td><td>JPA entity not found</td></tr>
  *   <tr><td>AccessDeniedException</td><td>403</td><td>Spring Security authorization failure</td></tr>
@@ -58,6 +60,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(errors, "VALIDATION_FAILED"));
+    }
+
+    // -------------------------------------------------------------------------
+    // 400 — Multipart upload too large
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handles requests whose uploaded file (or overall multipart request) exceeds the
+     * limits configured via {@code spring.servlet.multipart.max-file-size} /
+     * {@code max-request-size}. Without this handler, Spring throws this exception at the
+     * dispatcher level before it ever reaches a controller, and it would otherwise be
+     * caught by the generic 500 handler below — which is misleading, since this is really
+     * a client input error, not a server fault.
+     *
+     * @param ex the multipart size-limit exception
+     * @return 400 Bad Request with a clear "file too large" message
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceededException(
+            MaxUploadSizeExceededException ex) {
+
+        log.warn("Upload rejected — exceeds configured size limit: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(
+                        "The uploaded file is too large. Please choose a smaller file.",
+                        "FILE_TOO_LARGE"));
     }
 
     // -------------------------------------------------------------------------

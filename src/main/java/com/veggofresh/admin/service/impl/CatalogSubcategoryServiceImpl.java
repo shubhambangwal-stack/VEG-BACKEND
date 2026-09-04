@@ -8,6 +8,8 @@ import com.veggofresh.admin.repository.CatalogCategoryRepository;
 import com.veggofresh.admin.repository.CatalogSubcategoryRepository;
 import com.veggofresh.admin.service.CatalogSubcategoryService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,6 +28,7 @@ public class CatalogSubcategoryServiceImpl implements CatalogSubcategoryService 
 
     private final CatalogSubcategoryRepository subcategoryRepository;
     private final CatalogCategoryRepository categoryRepository;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     public SubcategoryResponseDto createSubcategory(SubcategoryRequestDto request) {
@@ -39,6 +42,15 @@ public class CatalogSubcategoryServiceImpl implements CatalogSubcategoryService 
         subcategory.setName(request.getName());
         subcategory.setDisplayOrder(request.getDisplayOrder());
         subcategory.setActive(true);
+
+        // Image is optional at creation too -- omit it and add one later via update.
+        if (request.getImage() != null && !request.getImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getImage(), "veggofresh/catalog/subcategories");
+            subcategory.setImageUrl(upload.url());
+            subcategory.setImagePublicId(upload.publicId());
+        }
+
         return toDto(subcategoryRepository.save(subcategory));
     }
 
@@ -57,6 +69,18 @@ public class CatalogSubcategoryServiceImpl implements CatalogSubcategoryService 
         subcategory.setCategory(category);
         subcategory.setName(request.getName());
         subcategory.setDisplayOrder(request.getDisplayOrder());
+
+        // Image: optional, single. Omitting it leaves the current image untouched --
+        // this does NOT follow the "always overwrite" behavior of the fields above.
+        if (request.getImage() != null && !request.getImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getImage(), "veggofresh/catalog/subcategories");
+            String oldPublicId = subcategory.getImagePublicId();
+            subcategory.setImageUrl(upload.url());
+            subcategory.setImagePublicId(upload.publicId());
+            cloudinaryService.deleteQuietly(oldPublicId);
+        }
+
         return toDto(subcategoryRepository.save(subcategory));
     }
 
@@ -108,6 +132,7 @@ public class CatalogSubcategoryServiceImpl implements CatalogSubcategoryService 
                 .categoryId(s.getCategory().getId())
                 .categoryName(s.getCategory().getName())
                 .name(s.getName())
+                .imageUrl(s.getImageUrl())
                 .displayOrder(s.getDisplayOrder())
                 .isActive(s.isActive())
                 .build();

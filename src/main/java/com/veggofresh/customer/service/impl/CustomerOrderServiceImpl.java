@@ -163,6 +163,15 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     }
 
     @Override
+    public void setDropOtpAvailable(UUID orderId, String dropOtp) {
+        log.info("Drop OTP now available for order {} (delivery partner arrived at drop)", orderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDropOtp(dropOtp);
+        orderRepository.save(order);
+    }
+
+    @Override
     public void cancelOrderSystemInitiated(UUID orderId, String reason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));

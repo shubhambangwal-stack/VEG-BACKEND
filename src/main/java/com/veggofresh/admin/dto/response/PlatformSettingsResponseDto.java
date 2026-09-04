@@ -20,6 +20,9 @@ public class PlatformSettingsResponseDto {
     private int rebroadcastMaxRounds;
     private int rebroadcastMaxElapsedMinutes;
 
+    /** No matching field on PlatformSettingsCeilingsDto -- this one has no hard ceiling. */
+    private int otpExpiryMinutes;
+
     /** Echoes the hard ceilings back so the Admin UI can show "max allowed: X" inline, without hardcoding them client-side too. */
     private PlatformSettingsCeilingsDto ceilings;
 

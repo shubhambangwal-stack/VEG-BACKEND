@@ -49,4 +49,13 @@ public class PlatformSettingsUpdateRequestDto {
     @NotNull(message = "rebroadcastMaxElapsedMinutes is required")
     @Min(value = 1, message = "rebroadcastMaxElapsedMinutes must be at least 1")
     private Integer rebroadcastMaxElapsedMinutes;
+
+    /**
+     * Deliberately NO @Max here, unlike every other field above -- confirmed with the
+     * team this one has no hard ceiling; whatever Admin sets is used as-is. Only a
+     * floor is enforced (must be positive), as plain input validation, not a business rule.
+     */
+    @NotNull(message = "otpExpiryMinutes is required")
+    @Min(value = 1, message = "otpExpiryMinutes must be at least 1 minute")
+    private Integer otpExpiryMinutes;
 }
