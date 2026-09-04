@@ -104,7 +104,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public long getUnreadCount(UUID recipientId) {
-        return notificationRepository.countByRecipientIdAndIsReadFalse(recipientId);
+        return notificationRepository.countByRecipientIdAndReadFalse(recipientId);
     }
 
     @Override

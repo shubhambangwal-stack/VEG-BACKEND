@@ -19,13 +19,13 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     Page<Notification> findByRecipientIdOrderByCreatedAtDesc(UUID recipientId, Pageable pageable);
 
     /** Badge count: how many unread notifications this recipient has. */
-    long countByRecipientIdAndIsReadFalse(UUID recipientId);
+    long countByRecipientIdAndReadFalse(UUID recipientId);
 
     /** Ownership-scoped read so a user can never mutate another recipient's row. */
     Optional<Notification> findByIdAndRecipientId(UUID id, UUID recipientId);
 
     /** Ownership-scoped "all read" marker update — single statement, no row-by-row round-trips. */
-    @Modifying
-    @Query("UPDATE Notification n SET n.isRead = true WHERE n.recipientId = :recipientId AND n.isRead = false")
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Notification n SET n.read = true WHERE n.recipientId = :recipientId AND n.read = false")
     int markAllRead(@Param("recipientId") UUID recipientId);
 }
