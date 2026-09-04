@@ -3,20 +3,25 @@ package com.veggofresh.admin.dto.request;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 /**
- * Used for {@code PUT /api/admin/catalog/products/{id}} only -- text/pricing fields.
- * Stays a plain JSON {@code @RequestBody}. Product images are managed exclusively
- * through the dedicated endpoints (add/delete/reorder), not through this DTO --
- * {@code imageUrl} has been removed for that reason. For the multipart create flow
- * (which requires at least one image up front), see {@link ProductCreateRequestDto}.
+ * Used for {@code POST /api/admin/catalog/products} only. Bound via
+ * {@code @ModelAttribute} from {@code multipart/form-data} so the initial batch of
+ * product images rides in the same call as the rest of the fields.
+ *
+ * <p>{@code images} is REQUIRED with at least one file -- a product cannot exist with
+ * zero images (unlike Customer/Vendor/Delivery avatars, or the Category/Subcategory
+ * icon, which are optional). There is no fixed upper limit; upload as many as you like
+ * in one call, or add more later via {@code POST /products/{id}/images}.
  */
 @Getter
 @Setter
-public class ProductRequestDto {
+public class ProductCreateRequestDto {
 
     @NotBlank(message = "Product name is required")
     @Size(max = 200)
@@ -36,12 +41,6 @@ public class ProductRequestDto {
     @Digits(integer = 8, fraction = 2)
     private BigDecimal price;
 
-    /**
-     * Optional "was" price for the strikethrough/discount badge. Omit or
-     * leave null for no discount. If provided, must be strictly greater
-     * than price -- validated in AdminProductServiceImpl (needs both fields
-     * together, so it can't live as a simple per-field annotation here).
-     */
     @DecimalMin(value = "0.01", message = "originalPrice must be greater than 0")
     @Digits(integer = 8, fraction = 2)
     private BigDecimal originalPrice;
@@ -49,4 +48,7 @@ public class ProductRequestDto {
     @NotBlank(message = "unit is required, e.g. '1 kg', '6 pcs'")
     @Size(max = 100)
     private String unit;
+
+    /** At least one image is required. Position in this list becomes the initial sort order (first = cover). */
+    private List<MultipartFile> images;
 }

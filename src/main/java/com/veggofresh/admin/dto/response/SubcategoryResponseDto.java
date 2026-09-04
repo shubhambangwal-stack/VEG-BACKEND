@@ -16,6 +16,10 @@ public class SubcategoryResponseDto {
     private UUID categoryId;
     private String categoryName;
     private String name;
+
+    /** New capability -- subcategories had no image field at all before this. */
+    private String imageUrl;
+
     private int displayOrder;
     private boolean isActive;
 }

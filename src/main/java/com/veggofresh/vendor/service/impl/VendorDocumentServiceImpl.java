@@ -1,6 +1,8 @@
 package com.veggofresh.vendor.service.impl;
 
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import com.veggofresh.vendor.dto.response.VendorDocumentResponseDto;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorDocument;
@@ -8,7 +10,6 @@ import com.veggofresh.vendor.entity.VendorDocumentStatus;
 import com.veggofresh.vendor.entity.VendorDocumentType;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.repository.VendorDocumentRepository;
-import com.veggofresh.vendor.service.VendorMockFileStorageService;
 import com.veggofresh.vendor.service.VendorDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -27,7 +28,7 @@ public class VendorDocumentServiceImpl implements VendorDocumentService {
 
     private final VendorDocumentRepository documentRepository;
     private final ShopRepository shopRepository;
-    private final VendorMockFileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     public List<VendorDocumentResponseDto> getDocuments(UUID ownerUserId) {
@@ -64,13 +65,21 @@ public class VendorDocumentServiceImpl implements VendorDocumentService {
                     return newDoc;
                 });
 
-        String fileUrl = fileStorageService.store(file, "vendor-documents/" + shop.getId());
-        doc.setFileUrl(fileUrl);
+        // Upload the new document first -- only swap over and delete the old one (if this
+        // document type was previously uploaded) once the new upload has actually succeeded.
+        CloudinaryUploadResult upload = cloudinaryService.uploadDocument(
+                file, "veggofresh/vendor-documents/" + shop.getId() + "/" + type.name());
+        String oldPublicId = doc.getPublicId();
+
+        doc.setFileUrl(upload.url());
+        doc.setPublicId(upload.publicId());
         // Any (re-)upload resets to PENDING -- real verification is a manual/admin
         // step that doesn't exist yet.
         doc.setStatus(VendorDocumentStatus.PENDING);
 
-        return mapToDto(documentRepository.save(doc));
+        VendorDocumentResponseDto response = mapToDto(documentRepository.save(doc));
+        cloudinaryService.deleteQuietly(oldPublicId);
+        return response;
     }
 
     private Shop requireShop(UUID ownerUserId) {

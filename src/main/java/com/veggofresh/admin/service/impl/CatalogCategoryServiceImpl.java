@@ -6,6 +6,8 @@ import com.veggofresh.admin.entity.CatalogCategory;
 import com.veggofresh.admin.repository.CatalogCategoryRepository;
 import com.veggofresh.admin.service.CatalogCategoryService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class CatalogCategoryServiceImpl implements CatalogCategoryService {
 
     private final CatalogCategoryRepository categoryRepository;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     public CategoryResponseDto createCategory(CategoryRequestDto request) {
@@ -33,9 +36,17 @@ public class CatalogCategoryServiceImpl implements CatalogCategoryService {
         CatalogCategory category = new CatalogCategory();
         category.setName(request.getName());
         category.setDescription(request.getDescription());
-        category.setImageUrl(request.getImageUrl());
         category.setDisplayOrder(request.getDisplayOrder());
         category.setActive(true);
+
+        // Image is optional at creation too -- omit it and add one later via update.
+        if (request.getImage() != null && !request.getImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getImage(), "veggofresh/catalog/categories");
+            category.setImageUrl(upload.url());
+            category.setImagePublicId(upload.publicId());
+        }
+
         return toDto(categoryRepository.save(category));
     }
 
@@ -49,8 +60,19 @@ public class CatalogCategoryServiceImpl implements CatalogCategoryService {
         }
         category.setName(request.getName());
         category.setDescription(request.getDescription());
-        category.setImageUrl(request.getImageUrl());
         category.setDisplayOrder(request.getDisplayOrder());
+
+        // Image: optional, single. Omitting it leaves the current image untouched --
+        // this does NOT follow the "always overwrite" behavior of the fields above.
+        if (request.getImage() != null && !request.getImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getImage(), "veggofresh/catalog/categories");
+            String oldPublicId = category.getImagePublicId();
+            category.setImageUrl(upload.url());
+            category.setImagePublicId(upload.publicId());
+            cloudinaryService.deleteQuietly(oldPublicId);
+        }
+
         return toDto(categoryRepository.save(category));
     }
 

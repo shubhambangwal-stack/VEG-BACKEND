@@ -51,6 +51,18 @@ spring:
     default-property-inclusion: non_null
     time-zone: UTC
 
+  # ── Multipart / File Uploads ────────────────────────────────
+  # Spring Boot's own default is 1MB per file / 10MB per request, which is too small
+  # for KYC documents and product photo galleries. Per-file-type limits are enforced
+  # on top of this by CloudinaryService (veggofresh.uploads.* below) — these two
+  # servlet-level values just need to be >= the largest per-file limit we allow, plus
+  # headroom for multi-image product uploads in a single request.
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:10MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:30MB}
+
 # ── Server ────────────────────────────────────────────────
 server:
   port: ${SERVER_PORT:8081}
@@ -91,6 +103,31 @@ veggofresh:
     # Provide via FIREBASE_SERVICE_ACCOUNT_PATH env var in deployment.
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
+
+  # ── Cloudinary ────────────────────────────────────────────
+  # ⚠ REQUIRED in every environment, including local. No defaults are provided here
+  # on purpose — same policy as DB_URL/DB_USERNAME/DB_PASSWORD — so nobody's real
+  # Cloudinary credentials ever end up committed to git. Export these three as
+  # environment variables before starting the app (IDE run config / shell env /
+  # secrets manager in prod):
+  #   CLOUDINARY_CLOUD_NAME
+  #   CLOUDINARY_API_KEY
+  #   CLOUDINARY_API_SECRET
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME}
+    api-key: ${CLOUDINARY_API_KEY}
+    api-secret: ${CLOUDINARY_API_SECRET}
+
+  # ── Upload limits (enforced by CloudinaryService, in addition to the servlet-level
+  #    multipart limits above) ─────────────────────────────────
+  uploads:
+    image:
+      # Avatars, store/category/subcategory icons, product photos. jpg/jpeg/png/webp only.
+      max-size-mb: ${IMAGE_MAX_SIZE_MB:5}
+    document:
+      # KYC/verification documents (vendor & delivery documents, onboarding license/
+      # insurance photos, proof-of-delivery). jpg/jpeg/png/webp/pdf.
+      max-size-mb: ${DOCUMENT_MAX_SIZE_MB:10}
 
 # ── SpringDoc / Swagger ───────────────────────────────────
 springdoc:

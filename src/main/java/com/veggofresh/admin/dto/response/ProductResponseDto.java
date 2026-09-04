@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -37,7 +38,18 @@ public class ProductResponseDto {
      */
     private Integer discountPercent;
 
+    /**
+     * The cover image (first by sortOrder in catalog_product_images) -- kept for
+     * backward compatibility with every existing consumer that only ever expected a
+     * single thumbnail (Vendor's ProductDto/VendorListingDto, Customer's browse
+     * screens). No longer backed by a plain string column; derived from the same
+     * data as {@link #imageUrls} below.
+     */
     private String imageUrl;
+
+    /** Full ordered gallery -- all of the product's images, cover first. */
+    private List<String> imageUrls;
+
     private boolean isActive;
     private Instant createdAt;
     private Instant updatedAt;
