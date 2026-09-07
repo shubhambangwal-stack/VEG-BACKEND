@@ -39,6 +39,9 @@ public class RefreshTokenRevocationTest {
     @Mock
     private JwtTokenProvider jwtTokenProvider;
 
+    @Mock
+    private com.veggofresh.auth.service.FirebaseAuthService firebaseAuthService;
+
     @InjectMocks
     private AuthServiceImpl authService;
 

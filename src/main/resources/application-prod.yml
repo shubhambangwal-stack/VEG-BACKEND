@@ -29,6 +29,10 @@ springdoc:
   # api-docs:
   #   enabled: false
 
+veggofresh:
+  firebase:
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
+
 logging:
   level:
     root: WARN

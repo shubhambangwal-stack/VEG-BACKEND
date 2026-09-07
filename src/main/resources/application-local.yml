@@ -23,6 +23,10 @@ spring:
     enabled: true
     out-of-order: false
 
+veggofresh:
+  firebase:
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
+
 logging:
   level:
     com.veggofresh: DEBUG

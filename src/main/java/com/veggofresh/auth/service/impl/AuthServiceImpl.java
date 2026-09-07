@@ -2,6 +2,7 @@ package com.veggofresh.auth.service.impl;
 
 import com.veggofresh.auth.dto.request.OtpRequestDto;
 import com.veggofresh.auth.dto.request.OtpVerifyDto;
+import com.veggofresh.auth.dto.request.FirebaseOtpVerifyDto;
 import com.veggofresh.auth.dto.request.RefreshTokenRequestDto;
 import com.veggofresh.auth.dto.response.AuthTokenResponseDto;
 import com.veggofresh.auth.dto.response.UserProfileResponseDto;
@@ -12,6 +13,7 @@ import com.veggofresh.auth.repository.OtpVerificationRepository;
 import com.veggofresh.auth.repository.RefreshTokenRepository;
 import com.veggofresh.auth.repository.UserRepository;
 import com.veggofresh.auth.service.AuthService;
+import com.veggofresh.auth.service.FirebaseAuthService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.platform.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +38,7 @@ public class AuthServiceImpl implements AuthService {
     private final OtpVerificationRepository otpVerificationRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final FirebaseAuthService firebaseAuthService;
 
     private static final int OTP_EXPIRY_MINUTES = 5;
     private static final int MAX_OTP_ATTEMPTS = 5;
@@ -44,12 +47,17 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void requestOtp(OtpRequestDto request) {
-        String phone = request.getPhone();
+        String otpCode = issueOtp(request.getPhone());
 
+        // Mock SMS sending
+        log.info("MOCK SMS -> Sending OTP {} to phone {}", otpCode, request.getPhone());
+    }
+
+    private String issueOtp(String phone) {
         // Rate limiting check
         List<OtpVerification> recentOtps = otpVerificationRepository
                 .findByPhoneAndCreatedAtAfter(phone, Instant.now().minus(OTP_RATE_LIMIT_SECONDS, ChronoUnit.SECONDS));
-        
+
         if (!recentOtps.isEmpty()) {
             throw new BusinessException("AUTH_OTP_RATE_LIMITED", "Please wait before requesting another OTP", HttpStatus.TOO_MANY_REQUESTS);
         }
@@ -63,8 +71,7 @@ public class AuthServiceImpl implements AuthService {
         verification.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
         otpVerificationRepository.save(verification);
 
-        // Mock SMS sending
-        log.info("MOCK SMS -> Sending OTP {} to phone {}", otpCode, phone);
+        return otpCode;
     }
 
     @Override
@@ -103,6 +110,32 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Find or create user
+        User user = userRepository.findByPhone(phone).orElseGet(() -> {
+            User newUser = new User();
+            newUser.setPhone(phone);
+            newUser.setRole(request.getRole());
+            newUser.setVerified(true);
+            return userRepository.save(newUser);
+        });
+
+        if (user.isBlocked()) {
+            throw new BusinessException("AUTH_USER_BLOCKED", "User account is blocked", HttpStatus.FORBIDDEN);
+        }
+
+        if (!user.isVerified()) {
+            user.setVerified(true);
+            userRepository.save(user);
+        }
+
+        return generateTokens(user);
+    }
+
+    @Override
+    public AuthTokenResponseDto verifyFirebaseOtp(FirebaseOtpVerifyDto request) {
+        // The client has already completed Firebase Phone Auth and presents its ID token.
+        // Server-side we only verify the token and trust the phone it carries.
+        String phone = firebaseAuthService.getVerifiedPhone(request.getIdToken());
+
         User user = userRepository.findByPhone(phone).orElseGet(() -> {
             User newUser = new User();
             newUser.setPhone(phone);
