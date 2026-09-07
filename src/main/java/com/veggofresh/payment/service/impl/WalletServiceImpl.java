@@ -95,6 +95,21 @@ public class WalletServiceImpl implements WalletService {
     @Override
     @Transactional(readOnly = true)
     public Page<WalletTransactionDto> getTransactionHistory(UUID userId, Pageable pageable) {
+        return getTransactionHistory(userId, null, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<WalletTransactionDto> getTransactionHistory(UUID userId, String type, Pageable pageable) {
+        if (type != null && !type.isBlank()) {
+            try {
+                WalletTransactionType txnType = WalletTransactionType.valueOf(type.toUpperCase(java.util.Locale.ROOT));
+                return walletTransactionRepository.findByUserIdAndTypeOrderByCreatedAtDesc(userId, txnType, pageable)
+                        .map(this::mapToDto);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid transaction type filter: {}", type);
+            }
+        }
         return walletTransactionRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable)
                 .map(this::mapToDto);
     }

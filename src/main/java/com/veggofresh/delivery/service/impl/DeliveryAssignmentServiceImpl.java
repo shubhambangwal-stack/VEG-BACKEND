@@ -23,6 +23,10 @@ import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.customer.entity.Order;
+import com.veggofresh.customer.repository.OrderRepository;
+import com.veggofresh.payment.service.PaymentService;
+import com.veggofresh.vendor.service.ShopLookupService;
 import com.veggofresh.platform.storage.CloudinaryService;
 import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
@@ -82,6 +86,9 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     private final UserLookupService userLookupService;
     private final CloudinaryService cloudinaryService;
     private final PlatformSettingsService platformSettingsService;
+    private final OrderRepository orderRepository;
+    private final PaymentService paymentService;
+    private final ShopLookupService shopLookupService;
 
     @Override
     @Transactional(readOnly = true)
@@ -327,6 +334,21 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         customerOrderService.updateOrderStatus(orderId, "DELIVERED");
 
         recordEarning(assignment);
+
+        try {
+            orderRepository.findById(orderId).ifPresent(order -> {
+                BigDecimal subtotal = order.getItems() != null ? order.getItems().stream()
+                        .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add) : BigDecimal.ZERO;
+                BigDecimal deliveryFee = order.getDeliveryFee() != null ? order.getDeliveryFee() : BigDecimal.valueOf(5.00);
+                UUID vendorUserId = order.getAcceptedShopId() != null
+                        ? shopLookupService.findOwnerUserIdByShopId(order.getAcceptedShopId()).orElse(null)
+                        : null;
+                paymentService.onDeliveryCompleted(orderId, subtotal, deliveryFee, vendorUserId, deliveryPartnerUserId);
+            });
+        } catch (Exception e) {
+            log.error("Failed to execute payment settlement for delivered order {}: {}", orderId, e.getMessage(), e);
+        }
 
         return mapToLightDto(assignment);
     }

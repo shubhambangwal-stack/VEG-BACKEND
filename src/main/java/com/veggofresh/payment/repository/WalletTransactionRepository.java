@@ -1,6 +1,7 @@
 package com.veggofresh.payment.repository;
 
 import com.veggofresh.payment.entity.WalletTransaction;
+import com.veggofresh.payment.entity.WalletTransactionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,4 +12,5 @@ import java.util.UUID;
 @Repository
 public interface WalletTransactionRepository extends JpaRepository<WalletTransaction, UUID> {
     Page<WalletTransaction> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+    Page<WalletTransaction> findByUserIdAndTypeOrderByCreatedAtDesc(UUID userId, WalletTransactionType type, Pageable pageable);
 }

@@ -39,4 +39,6 @@ public interface WalletService {
                                 UUID referenceId, String description);
 
     Page<WalletTransactionDto> getTransactionHistory(UUID userId, Pageable pageable);
+
+    Page<WalletTransactionDto> getTransactionHistory(UUID userId, String type, Pageable pageable);
 }

@@ -11,6 +11,7 @@ import com.veggofresh.customer.service.OrderService;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
@@ -53,6 +54,7 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderService orderService;
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
+    private final PaymentService paymentService;
     private final PlatformSettingsService platformSettingsService;
     private final NotificationService notificationService;
     private final ShopLookupService shopLookupService;
@@ -71,7 +73,9 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
 
         int claimed = orderRepository.atomicAccept(orderId, shopId, OrderStatus.CONFIRMED, OrderStatus.PLACED);
         if (claimed > 0) {
-            // Confirmed: notify the customer and the winning shop owner.
+            // Confirmed: notify payment service, the customer, and the winning shop owner.
+            paymentService.onOrderAccepted(orderId);
+
             orderRepository.findById(orderId).ifPresent(order -> {
                 notificationService.send(order.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CONFIRMED,
                         "Order confirmed", "Your order " + order.getOrderNumber() + " has been confirmed by the shop",
@@ -193,9 +197,8 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
 
-        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
-            log.info("cancelOrderSystemInitiated no-op for order {} -- already terminal ({})", orderId, order.getStatus());
-            return;
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return; // idempotent no-op
         }
 
         log.warn("System-initiated cancellation for order {}: {}", orderId, reason);

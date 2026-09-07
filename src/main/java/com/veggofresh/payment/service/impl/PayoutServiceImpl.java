@@ -55,7 +55,15 @@ public class PayoutServiceImpl implements PayoutService {
 
         // Validate user has bank account saved
         UserBankAccount bankAccount = userBankAccountRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_REQUIRED", "Please save your bank account details before requesting a withdrawal", HttpStatus.BAD_REQUEST));
+                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_REQUIRED",
+                        "Please save your bank account details before requesting a withdrawal", HttpStatus.BAD_REQUEST));
+
+        // Validate bank account is verified by admin
+        if (!bankAccount.isVerified()) {
+            throw new BusinessException("BANK_ACCOUNT_NOT_VERIFIED",
+                    "Your bank account details are pending admin verification. Please wait for approval before requesting a withdrawal.",
+                    HttpStatus.FORBIDDEN);
+        }
 
         // Validate wallet balance
         WalletBalanceDto wallet = walletService.getBalance(userId);

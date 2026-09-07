@@ -287,13 +287,17 @@ public class PaymentServiceImpl implements PaymentService {
                 .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
         BigDecimal vendorShare = orderSubtotal.subtract(platformCut);
 
-        walletService.credit(vendorUserId, vendorShare,
-                WalletTransactionReason.ORDER_VENDOR_SETTLEMENT,
-                orderId, "Revenue from completed order (net of " + commissionPercent + "% platform commission)");
+        if (vendorUserId != null) {
+            walletService.credit(vendorUserId, vendorShare,
+                    WalletTransactionReason.ORDER_VENDOR_SETTLEMENT,
+                    orderId, "Revenue from completed order (net of " + commissionPercent + "% platform commission)");
+        }
 
-        walletService.credit(deliveryPartnerUserId, deliveryFee,
-                WalletTransactionReason.ORDER_DELIVERY_SETTLEMENT,
-                orderId, "Delivery earnings for completed order");
+        if (deliveryPartnerUserId != null) {
+            walletService.credit(deliveryPartnerUserId, deliveryFee,
+                    WalletTransactionReason.ORDER_DELIVERY_SETTLEMENT,
+                    orderId, "Delivery earnings for completed order");
+        }
 
         walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, platformCut,
                 WalletTransactionReason.ORDER_PLATFORM_COMMISSION,
