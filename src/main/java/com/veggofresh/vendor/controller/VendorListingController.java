@@ -38,6 +38,10 @@ import java.util.UUID;
  * DELETE /api/vendor/listings/{catalogProductId}
  *        — permanently removes the item from "mine" (soft delete). Works whether
  *          the item is currently listed or unlisted.
+ * GET    /api/vendor/listings/{catalogProductId}
+ *        — NEW: single-item detail, full image gallery included. Static segments
+ *          ("mine") always win over the {catalogProductId} path variable in Spring's
+ *          matching, so this doesn't clash with GET /mine above.
  * </pre>
  */
 @RestController
@@ -58,6 +62,13 @@ public class VendorListingController {
         Page<VendorListingDto> result = vendorListingService.browseCatalog(
                 SecurityUtils.getCurrentUserId(), search, categoryId, subcategoryId, PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(result), "Catalog retrieved successfully"));
+    }
+
+    /** NEW -- single-product detail, full imageUrls gallery included (was missing entirely before). */
+    @GetMapping("/{catalogProductId}")
+    public ResponseEntity<ApiResponse<VendorListingDto>> getListingDetail(@PathVariable UUID catalogProductId) {
+        VendorListingDto result = vendorListingService.getListingDetail(SecurityUtils.getCurrentUserId(), catalogProductId);
+        return ResponseEntity.ok(ApiResponse.success(result, "Listing detail retrieved successfully"));
     }
 
     @PutMapping("/{catalogProductId}")

@@ -55,6 +55,14 @@ public class VendorListingServiceImpl implements VendorListingService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public VendorListingDto getListingDetail(UUID ownerUserId, UUID catalogProductId) {
+        Shop shop = requireShop(ownerUserId);
+        ProductResponseDto product = adminProductService.getProductById(catalogProductId);
+        return toDto(product, shop.getId());
+    }
+
+    @Override
     public VendorListingDto setListed(UUID ownerUserId, UUID catalogProductId, boolean listed) {
         Shop shop = requireShop(ownerUserId);
 
@@ -139,6 +147,7 @@ public class VendorListingServiceImpl implements VendorListingService {
                 .unit(p.getUnit())
                 .discountPercent(p.getDiscountPercent())
                 .imageUrl(p.getImageUrl())
+                .imageUrls(p.getImageUrls())
                 .isListed(isListed)
                 .build();
     }
