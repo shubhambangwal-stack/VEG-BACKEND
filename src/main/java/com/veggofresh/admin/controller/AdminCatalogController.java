@@ -6,12 +6,14 @@ import com.veggofresh.admin.dto.request.ProductImageReorderRequestDto;
 import com.veggofresh.admin.dto.request.ProductRequestDto;
 import com.veggofresh.admin.dto.request.SubcategoryRequestDto;
 import com.veggofresh.admin.dto.response.CategoryResponseDto;
+import com.veggofresh.admin.dto.response.CategoryTreeDto;
 import com.veggofresh.admin.dto.response.ProductImageResponseDto;
 import com.veggofresh.admin.dto.response.ProductResponseDto;
 import com.veggofresh.admin.dto.response.SubcategoryResponseDto;
 import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.admin.service.CatalogCategoryService;
 import com.veggofresh.admin.service.CatalogSubcategoryService;
+import com.veggofresh.admin.service.CatalogTreeService;
 import com.veggofresh.platform.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +61,11 @@ import java.util.UUID;
  * DELETE /api/admin/catalog/products/{id}/images/{imageId}  -- refuses to delete the last remaining image
  * PUT    /api/admin/catalog/products/{id}/images/reorder     -- JSON { "imageIds": [...] }, full reorder, position 0 = cover
  *
+ * ── Combined tree (NEW) ──────────────────────────────────────
+ * GET    /api/admin/catalog/categories/{id}/tree  -- one category, subcategories + products nested, no filtering
+ * GET    /api/admin/catalog/tree                  -- entire catalog, same nesting. Testing/tooling use --
+ *                                                     cost scales with catalog size.
+ *
  * No hard-delete endpoints anywhere in this controller, deliberately —
  * see NOTES_ADMIN.md, "Catalog: no hard delete."
  * </pre>
@@ -71,6 +78,7 @@ public class AdminCatalogController {
 
     private final CatalogCategoryService categoryService;
     private final CatalogSubcategoryService subcategoryService;
+    private final CatalogTreeService catalogTreeService;
     private final AdminProductService adminProductService;
 
     // ── CATEGORIES ───────────────────────────────────────────────────────
@@ -220,5 +228,21 @@ public class AdminCatalogController {
             @PathVariable UUID id, @Valid @RequestBody ProductImageReorderRequestDto request) {
         return ResponseEntity.ok(ApiResponse.success(
                 adminProductService.reorderImages(id, request.getImageIds()), "Images reordered successfully"));
+    }
+
+    // ── COMBINED TREE (NEW) ──────────────────────────────────────────────
+
+    /** One category, its subcategories, and each subcategory's products, all nested. No filtering. */
+    @GetMapping("/categories/{id}/tree")
+    public ResponseEntity<ApiResponse<CategoryTreeDto>> getCategoryTree(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(
+                catalogTreeService.getCategoryTree(id), "Category tree retrieved successfully"));
+    }
+
+    /** Entire catalog, same nesting. Testing/tooling use -- cost scales with catalog size. */
+    @GetMapping("/tree")
+    public ResponseEntity<ApiResponse<List<CategoryTreeDto>>> getFullCatalogTree() {
+        return ResponseEntity.ok(ApiResponse.success(
+                catalogTreeService.getFullCatalogTree(), "Full catalog tree retrieved successfully"));
     }
 }

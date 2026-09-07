@@ -4,6 +4,8 @@ import com.veggofresh.admin.dto.response.CategoryResponseDto;
 import com.veggofresh.admin.dto.response.SubcategoryResponseDto;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.common.PageResponse;
+import com.veggofresh.platform.security.SecurityUtils;
+import com.veggofresh.vendor.dto.response.VendorCategoryTreeDto;
 import com.veggofresh.vendor.service.VendorCategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -28,6 +31,12 @@ import java.util.UUID;
  * <pre>
  * GET /api/vendor/categories?search=&page=&size=
  * GET /api/vendor/categories/{categoryId}/subcategories?search=&page=&size=
+ * GET /api/vendor/categories/{categoryId}/tree
+ *     — NEW: this category, its subcategories, and each subcategory's products
+ *       (this vendor's isListed merged in), all nested in one response.
+ * GET /api/vendor/categories/tree
+ *     — NEW: the entire catalog, same nesting, every category at once.
+ *       Testing/tooling use, not the production app -- cost scales with catalog size.
  * </pre>
  *
  * Vendor never creates/edits categories -- that stays exclusively in
@@ -60,5 +69,19 @@ public class VendorCategoryController {
         Page<SubcategoryResponseDto> result = vendorCategoryService.browseSubcategories(
                 categoryId, search, PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "displayOrder")));
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(result), "Subcategories retrieved successfully"));
+    }
+
+    /** NEW -- one category, nested subcategories + products, isListed merged in per product. */
+    @GetMapping("/{categoryId}/tree")
+    public ResponseEntity<ApiResponse<VendorCategoryTreeDto>> getCategoryTree(@PathVariable UUID categoryId) {
+        VendorCategoryTreeDto result = vendorCategoryService.getCategoryTree(SecurityUtils.getCurrentUserId(), categoryId);
+        return ResponseEntity.ok(ApiResponse.success(result, "Category tree retrieved successfully"));
+    }
+
+    /** NEW -- entire catalog, same nesting. Testing/tooling use -- cost scales with catalog size. */
+    @GetMapping("/tree")
+    public ResponseEntity<ApiResponse<List<VendorCategoryTreeDto>>> getFullCatalogTree() {
+        List<VendorCategoryTreeDto> result = vendorCategoryService.getFullCatalogTree(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(result, "Full catalog tree retrieved successfully"));
     }
 }
