@@ -104,6 +104,12 @@ veggofresh:
     # Example: /secrets/firebase-service-account.json
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:}
 
+# ── FCM (Firebase Cloud Messaging) ────────────────────────
+fcm:
+  server:
+    # FCM legacy server key. Provide via FCM_SERVER_KEY env var in deployment.
+    key: ${FCM_SERVER_KEY:}
+
   # ── Cloudinary ────────────────────────────────────────────
   # ⚠ REQUIRED in every environment, including local. No defaults are provided here
   # on purpose — same policy as DB_URL/DB_USERNAME/DB_PASSWORD — so nobody's real
