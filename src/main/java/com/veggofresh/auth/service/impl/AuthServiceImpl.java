@@ -53,6 +53,13 @@ public class AuthServiceImpl implements AuthService {
         if (!recentOtps.isEmpty()) {
             throw new BusinessException("AUTH_OTP_RATE_LIMITED", "Please wait before requesting another OTP", HttpStatus.TOO_MANY_REQUESTS);
         }
+        // Rate limiting check — disabled while SMS is mocked (re-enable before going live)
+//        List<OtpVerification> recentOtps = otpVerificationRepository
+//                .findByPhoneAndCreatedAtAfter(phone, Instant.now().minus(OTP_RATE_LIMIT_SECONDS, ChronoUnit.SECONDS));
+//
+//        if (!recentOtps.isEmpty()) {
+//            throw new BusinessException("AUTH_OTP_RATE_LIMITED", "Please wait before requesting another OTP", HttpStatus.TOO_MANY_REQUESTS);
+//        }
 
         // Generate OTP
         String otpCode = String.format("%06d", new Random().nextInt(999999));

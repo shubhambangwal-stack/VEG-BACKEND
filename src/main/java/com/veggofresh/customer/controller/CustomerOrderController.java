@@ -39,6 +39,23 @@ public class CustomerOrderController {
 
     private final OrderService orderService;
     private final DeliverySlotService deliverySlotService;
+    private final PaymentService paymentService;
+
+    /**
+     * Alias for {@code POST /api/payment/orders/verify}.
+     * The Razorpay mobile SDK callback hits this URL; it simply delegates to
+     * PaymentService so no separate controller is needed on the app side.
+     */
+    @PostMapping("/verify-payment")
+    public ResponseEntity<ApiResponse<String>> verifyPayment(
+            @Valid @RequestBody VerifyPaymentRequestDto request) {
+        paymentService.verifyPayment(
+                request.getRazorpayOrderId(),
+                request.getRazorpayPaymentId(),
+                request.getRazorpaySignature()
+        );
+        return ResponseEntity.ok(ApiResponse.success("Payment verified and authorized successfully", "OK"));
+    }
 
     /**
      * PHASE 2 — BREAKING CHANGE: response is now {@link CheckoutResultDto}
