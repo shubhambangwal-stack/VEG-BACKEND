@@ -1,121 +1,110 @@
 package com.veggofresh.notification.service;
 
-import com.veggofresh.notification.dto.NotificationSendRequestDto;
-import com.veggofresh.notification.entity.Notification;
-import com.veggofresh.notification.entity.Notification.Type;
-import com.veggofresh.notification.entity.Notification.Status;
-import com.veggofresh.notification.entity.Notification.Channel;
-import com.veggofresh.notification.service.fcm.FcmService;
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.*;
 
+import java.util.UUID;
+
+/**
+ * Convenience façade used by other modules (order, delivery, payment) to fire
+ * domain-specific notifications without knowing the internals of
+ * {@link NotificationService}. Each method maps a business event to the
+ * correct {@link NotificationType} and {@link NotificationRecipientRole} and
+ * delegates to the durable {@code send()} path.
+ */
 @Service
 @RequiredArgsConstructor
 public class NotificationSenderService {
 
     private final NotificationService notificationService;
-    private final FcmService fcmService;
 
     @Transactional
-    public Notification sendOrderAcceptedNotification(UUID orderId, UUID vendorId, UUID customerId) {
-        String title = "Order Accepted";
-        String message = "Your order has been accepted by the vendor";
-
-        NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(customerId);
-        inAppRequest.setRecipientType("CUSTOMER");
-        inAppRequest.setNotificationType(Type.ORDER_ACCEPTED.name());
-        inAppRequest.setTitle(title);
-        inAppRequest.setMessage(message);
-        inAppRequest.setPriority("HIGH");
-        inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
-        notificationService.sendNotification(inAppRequest);
-
-        return null;
-    }
-
-    @Transactional
-    public Notification sendOrderStatusUpdate(UUID orderId, String newStatus, UUID customerId, UUID vendorId) {
-        Map<String, String> statusMap = Map.of(
-            "ORDER_PLACED", "Order Placed",
-            "ORDER_ACCEPTED", "Order Accepted",
-            "ORDER_REJECTED", "Order Rejected",
-            "ORDER_PREPARING", "Order Preparing",
-            "ORDER_OUT_FOR_DELIVERY", "Out for Delivery",
-            "ORDER_DELIVERED", "Order Delivered",
-            "ORDER_CANCELLED", "Order Cancelled"
+    public void sendOrderAcceptedNotification(UUID orderId, UUID vendorId, UUID customerId) {
+        notificationService.send(
+                customerId,
+                NotificationRecipientRole.CUSTOMER,
+                NotificationType.ORDER_ACCEPTED,
+                "Order Accepted",
+                "Your order has been accepted by the vendor",
+                null
         );
+    }
 
+    @Transactional
+    public void sendOrderStatusUpdate(UUID orderId, String newStatus, UUID customerId, UUID vendorId) {
+        java.util.Map<String, String> statusMap = java.util.Map.of(
+                "ORDER_PLACED",           "Order Placed",
+                "ORDER_ACCEPTED",         "Order Accepted",
+                "ORDER_REJECTED",         "Order Rejected",
+                "ORDER_PREPARING",        "Order Preparing",
+                "ORDER_OUT_FOR_DELIVERY", "Out for Delivery",
+                "ORDER_DELIVERED",        "Order Delivered",
+                "ORDER_CANCELLED",        "Order Cancelled"
+        );
         String displayStatus = statusMap.getOrDefault(newStatus, newStatus);
-        String title = "Order Status Update";
-        String message = "Your order status has been updated to " + displayStatus;
-
-        NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(customerId);
-        inAppRequest.setRecipientType("CUSTOMER");
-        inAppRequest.setNotificationType(Type.STATUS_UPDATE.name());
-        inAppRequest.setTitle(title);
-        inAppRequest.setMessage(message);
-        inAppRequest.setPriority("HIGH");
-        inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
-        notificationService.sendNotification(inAppRequest);
-
-        return null;
+        NotificationType type = resolveOrderStatusType(newStatus);
+        notificationService.send(
+                customerId,
+                NotificationRecipientRole.CUSTOMER,
+                type,
+                "Order Status Update",
+                "Your order status has been updated to " + displayStatus,
+                null
+        );
     }
 
     @Transactional
-    public Notification sendVendorNewOrder(UUID orderId, String restaurantName, UUID vendorId) {
-        String title = "New Order Received";
-        String message = "You have received a new order from " + restaurantName;
-
-        NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(vendorId);
-        inAppRequest.setRecipientType("VENDOR");
-        inAppRequest.setNotificationType(Type.VENDOR_BROADCAST.name());
-        inAppRequest.setTitle(title);
-        inAppRequest.setMessage(message);
-        inAppRequest.setPriority("HIGH");
-        inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
-        notificationService.sendNotification(inAppRequest);
-
-        return null;
+    public void sendVendorNewOrder(UUID orderId, String restaurantName, UUID vendorId) {
+        notificationService.send(
+                vendorId,
+                NotificationRecipientRole.VENDOR,
+                NotificationType.NEW_ORDER_REQUEST,
+                "New Order Received",
+                "You have received a new order from " + restaurantName,
+                null
+        );
     }
 
     @Transactional
-    public Notification sendDeliveryAssignment(UUID assignmentId, String partnerName, UUID customerId) {
-        String title = "New Delivery Assignment";
-        String message = partnerName + " has been assigned to your order";
-
-        NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(customerId);
-        inAppRequest.setRecipientType("CUSTOMER");
-        inAppRequest.setNotificationType(Type.DELIVERY_BROADCAST.name());
-        inAppRequest.setTitle(title);
-        inAppRequest.setMessage(message);
-        inAppRequest.setPriority("HIGH");
-        inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
-        notificationService.sendNotification(inAppRequest);
-
-        return null;
+    public void sendDeliveryAssignment(UUID assignmentId, String partnerName, UUID customerId) {
+        notificationService.send(
+                customerId,
+                NotificationRecipientRole.CUSTOMER,
+                NotificationType.DELIVERY_ASSIGNED,
+                "New Delivery Assignment",
+                partnerName + " has been assigned to your order",
+                null
+        );
     }
 
     @Transactional
-    public Notification sendPickupOtp(UUID vendorId, UUID assignmentId, String otpCode) {
-        String title = "Pickup OTP";
-        String message = "Your pickup OTP is: " + otpCode + " (valid for 10 minutes)";
+    public void sendPickupOtp(UUID vendorId, UUID assignmentId, String otpCode) {
+        notificationService.send(
+                vendorId,
+                NotificationRecipientRole.VENDOR,
+                NotificationType.DELIVERY_PICKUP_OTP_GENERATED,
+                "Pickup OTP",
+                "Your pickup OTP is: " + otpCode + " (valid for 10 minutes)",
+                null
+        );
+    }
 
-        NotificationSendRequestDto inAppRequest = new NotificationSendRequestDto();
-        inAppRequest.setRecipientId(vendorId);
-        inAppRequest.setRecipientType("VENDOR");
-        inAppRequest.setNotificationType(Type.PICKUP_OTP.name());
-        inAppRequest.setTitle(title);
-        inAppRequest.setMessage(message);
-        inAppRequest.setPriority("HIGH");
-        inAppRequest.setDeliveryChannel(Channel.IN_APP.name());
-        notificationService.sendNotification(inAppRequest);
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
 
-        return null;
+    private NotificationType resolveOrderStatusType(String rawStatus) {
+        return switch (rawStatus) {
+            case "ORDER_PLACED"           -> NotificationType.ORDER_PLACED;
+            case "ORDER_ACCEPTED"         -> NotificationType.ORDER_ACCEPTED;
+            case "ORDER_PREPARING"        -> NotificationType.ORDER_PACKED;
+            case "ORDER_OUT_FOR_DELIVERY" -> NotificationType.ORDER_OUT_FOR_DELIVERY;
+            case "ORDER_DELIVERED"        -> NotificationType.ORDER_DELIVERED;
+            case "ORDER_CANCELLED"        -> NotificationType.ORDER_CANCELLED;
+            default                       -> NotificationType.ORDER_PLACED;
+        };
     }
 }

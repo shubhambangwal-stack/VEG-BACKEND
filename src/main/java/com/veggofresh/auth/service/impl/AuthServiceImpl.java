@@ -1,10 +1,12 @@
 package com.veggofresh.auth.service.impl;
 
+import com.veggofresh.auth.dto.request.FirebaseOtpVerifyDto;
 import com.veggofresh.auth.dto.request.OtpRequestDto;
 import com.veggofresh.auth.dto.request.OtpVerifyDto;
 import com.veggofresh.auth.dto.request.RefreshTokenRequestDto;
 import com.veggofresh.auth.dto.response.AuthTokenResponseDto;
 import com.veggofresh.auth.dto.response.UserProfileResponseDto;
+import com.veggofresh.auth.service.FirebaseAuthService;
 import com.veggofresh.auth.entity.OtpVerification;
 import com.veggofresh.auth.entity.RefreshToken;
 import com.veggofresh.auth.entity.User;
@@ -36,6 +38,7 @@ public class AuthServiceImpl implements AuthService {
     private final OtpVerificationRepository otpVerificationRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtTokenProvider jwtTokenProvider;
+    private final FirebaseAuthService firebaseAuthService;
 
     private static final int OTP_EXPIRY_MINUTES = 5;
     private static final int MAX_OTP_ATTEMPTS = 5;
@@ -103,6 +106,32 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Find or create user
+        User user = userRepository.findByPhone(phone).orElseGet(() -> {
+            User newUser = new User();
+            newUser.setPhone(phone);
+            newUser.setRole(request.getRole());
+            newUser.setVerified(true);
+            return userRepository.save(newUser);
+        });
+
+        if (user.isBlocked()) {
+            throw new BusinessException("AUTH_USER_BLOCKED", "User account is blocked", HttpStatus.FORBIDDEN);
+        }
+
+        if (!user.isVerified()) {
+            user.setVerified(true);
+            userRepository.save(user);
+        }
+
+        return generateTokens(user);
+    }
+
+    @Override
+    public AuthTokenResponseDto verifyFirebaseOtp(FirebaseOtpVerifyDto request) {
+        // Verify Firebase ID token and extract phone number (Firebase has already validated the SMS OTP).
+        String phone = firebaseAuthService.getVerifiedPhone(request.getIdToken());
+
+        // Find or create user by verified phone — same pattern as verifyOtp.
         User user = userRepository.findByPhone(phone).orElseGet(() -> {
             User newUser = new User();
             newUser.setPhone(phone);

@@ -1,30 +1,5 @@
 package com.veggofresh.notification.service;
 
-<<<<<<< HEAD
-import com.veggofresh.notification.dto.NotificationSendRequestDto;
-import com.veggofresh.notification.dto.NotificationResponseDto;
-import com.veggofresh.notification.dto.NotificationStatusRequestDto;
-import com.veggofresh.notification.dto.NotificationCountRequestDto;
-import com.veggofresh.notification.dto.NotificationCountResponseDto;
-import com.veggofresh.notification.entity.Notification;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-public interface NotificationService {
-
-    Notification sendNotification(NotificationSendRequestDto request);
-
-    Optional<NotificationResponseDto> getNotificationStatus(UUID notificationId);
-
-    NotificationCountResponseDto getNotificationCount(NotificationCountRequestDto request);
-
-    List<NotificationResponseDto> getNotificationsByRecipient(String recipientType, UUID recipientId, Integer page, Integer size);
-
-    Optional<NotificationResponseDto> markAsRead(UUID notificationId);
-
-    Optional<NotificationResponseDto> deleteNotification(UUID notificationId);
-=======
 import com.veggofresh.notification.dto.NotificationDto;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
@@ -84,5 +59,4 @@ public interface NotificationService {
 
     /** Marks every notification of the recipient as read; returns how many rows were updated. */
     int markAllAsRead(UUID recipientId);
->>>>>>> 5d59f32924e5d18dc9e8d7fe3f7ff5cb7a78a1a2
 }

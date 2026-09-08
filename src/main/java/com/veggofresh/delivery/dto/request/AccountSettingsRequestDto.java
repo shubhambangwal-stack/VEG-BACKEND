@@ -3,6 +3,7 @@ package com.veggofresh.delivery.dto.request;
 import jakarta.validation.constraints.Email;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Bound via {@code @ModelAttribute} from {@code multipart/form-data} (not JSON) so the

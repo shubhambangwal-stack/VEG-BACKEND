@@ -32,7 +32,10 @@ springdoc:
 veggofresh:
   firebase:
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
-
+cloudinary:
+  cloud-name: nn6v1iwx
+  api-key: "225473847594236"
+  api-secret: WgtN1vIiMis3kLHAZWDkO28N6nM
 logging:
   level:
     root: WARN

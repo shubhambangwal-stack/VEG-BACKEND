@@ -27,6 +27,27 @@ veggofresh:
   firebase:
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
 
+  # ── Cloudinary (local dev credentials) ──────────────────────
+  # These are your local dev credentials. In production, set the
+  # CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET
+  # environment variables instead — they take precedence.
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:nn6v1iwx}
+    api-key: ${CLOUDINARY_API_KEY:225473847594236}
+    api-secret: ${CLOUDINARY_API_SECRET:WgtN1vIiMis3kLHAZWDkO28N6nM}
+
+  # ── Razorpay (local dev / test credentials) ──────────────────
+  # Uses Razorpay test-mode keys — safe for local development.
+  # In production set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET /
+  # RAZORPAY_WEBHOOK_SECRET as environment variables.
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
+    key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=}
+    payouts-enabled: ${RAZORPAY_PAYOUTS_ENABLED:false}
+    account-number: ${RAZORPAY_ACCOUNT_NUMBER:2323230073112811}
+    platform-commission-percent: 10
+
 logging:
   level:
     com.veggofresh: DEBUG
