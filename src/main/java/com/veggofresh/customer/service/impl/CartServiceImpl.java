@@ -286,6 +286,7 @@ public class CartServiceImpl implements CartService {
                         .productId(item.getProductId())
                         .productName(product.getName())
                         .unitPrice(product.getPrice())
+                        .unit(product.getUnit())
                         .quantity(item.getQuantity())
                         .subTotal(subTotal)
                         .productImageUrl(product.getImageUrl())

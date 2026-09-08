@@ -1,9 +1,9 @@
 package com.veggofresh.vendor.service;
 
 import com.veggofresh.admin.service.AdminProductService;
-import com.veggofresh.customer.entity.Order;
+import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.entity.OrderStatus;
-import com.veggofresh.customer.repository.OrderRepository;
+import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ShopRepository;
@@ -19,15 +19,22 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * NOT YET FIXED: same Customer-entity boundary violation as VendorDashboardService.
- * Deliberately deferred past the onboarding phase. See NOTES_VENDOR.md.
+ * FIXED this round: was directly injecting Customer's OrderRepository/Order
+ * entity, bypassing CustomerOrderService entirely -- a boundary violation the
+ * file's own previous comment already flagged as deliberately deferred. Fixed
+ * now (rather than left deferred) because OrderRepository.findByShopId() was
+ * removed as part of the accept/reject broadcast redesign, turning the
+ * deferred debt into an active compile error. Now goes through
+ * CustomerOrderService.getAcceptedOrdersForShop(), which is also more
+ * correct: it returns only orders this shop actually won, not every order it
+ * was ever a broadcast candidate for.
  */
 @Service
 @RequiredArgsConstructor
 public class VendorReportService {
 
     private final ShopRepository shopRepository;
-    private final OrderRepository orderRepository;
+    private final CustomerOrderService customerOrderService;
     private final VendorListingRepository vendorListingRepository;
     private final AdminProductService adminProductService;
 
@@ -36,20 +43,20 @@ public class VendorReportService {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
-        List<Order> orders = orderRepository.findByShopId(shop.getId());
+        List<OrderResponseDto> orders = customerOrderService.getAcceptedOrdersForShop(shop.getId());
 
         long totalSalesCount = orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                .filter(o -> OrderStatus.DELIVERED.name().equals(o.getStatus()))
                 .count();
 
         BigDecimal totalRevenue = orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                .filter(o -> OrderStatus.DELIVERED.name().equals(o.getStatus()))
                 .map(o -> calculateShopRevenueForOrder(o, shop.getId()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Map<String, Integer> salesByProduct = new HashMap<>();
         orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                .filter(o -> OrderStatus.DELIVERED.name().equals(o.getStatus()))
                 .flatMap(o -> o.getItems().stream())
                 .forEach(item -> {
                     if (vendorListingRepository.findByShopIdAndCatalogProductId(shop.getId(), item.getProductId()).isPresent()) {
@@ -65,21 +72,22 @@ public class VendorReportService {
                 "salesByProduct", salesByProduct
         );
     }
+    
 
     @Transactional(readOnly = true)
     public Map<String, Object> getEarningsReports(UUID ownerUserId) {
         Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found"));
 
-        List<Order> orders = orderRepository.findByShopId(shop.getId());
+        List<OrderResponseDto> orders = customerOrderService.getAcceptedOrdersForShop(shop.getId());
 
         BigDecimal totalEarnings = orders.stream()
-                .filter(o -> o.getStatus() == OrderStatus.DELIVERED)
+                .filter(o -> OrderStatus.DELIVERED.name().equals(o.getStatus()))
                 .map(o -> calculateShopRevenueForOrder(o, shop.getId()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal pendingEarnings = orders.stream()
-                .filter(o -> o.getStatus() != OrderStatus.DELIVERED && o.getStatus() != OrderStatus.CANCELLED)
+                .filter(o -> !OrderStatus.DELIVERED.name().equals(o.getStatus()) && !OrderStatus.CANCELLED.name().equals(o.getStatus()))
                 .map(o -> calculateShopRevenueForOrder(o, shop.getId()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -91,7 +99,7 @@ public class VendorReportService {
         );
     }
 
-    private BigDecimal calculateShopRevenueForOrder(Order order, UUID shopId) {
+    private BigDecimal calculateShopRevenueForOrder(OrderResponseDto order, UUID shopId) {
         return order.getItems().stream()
                 .map(item -> {
                     if (vendorListingRepository.findByShopIdAndCatalogProductId(shopId, item.getProductId()).isPresent()) {

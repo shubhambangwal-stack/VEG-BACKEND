@@ -4,7 +4,18 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * Bound via {@code @ModelAttribute} from {@code multipart/form-data} (not JSON) so the
+ * category image rides in the same call as the rest of the fields, for both create
+ * ({@code POST /api/admin/catalog/categories}) and update
+ * ({@code PUT /api/admin/catalog/categories/{id}}).
+ *
+ * <p>{@code image} is optional and single: omit it to leave the existing category image
+ * unchanged (on update) or create with no image (on create); include it to set/replace it
+ * (the old Cloudinary asset is auto-deleted on replace).
+ */
 @Getter
 @Setter
 public class CategoryRequestDto {
@@ -16,7 +27,8 @@ public class CategoryRequestDto {
     @Size(max = 1000)
     private String description;
 
-    private String imageUrl;
+    /** Optional category icon/image (jpg/jpeg/png/webp). Omit to leave unchanged. */
+    private MultipartFile image;
 
     private int displayOrder = 0;
 }

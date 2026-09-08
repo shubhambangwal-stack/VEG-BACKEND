@@ -15,5 +15,6 @@ public class InvoiceLineItemDto {
     private String productName;
     private int quantity;
     private BigDecimal unitPrice;
+    private String unit;
     private BigDecimal subTotal;
 }

@@ -2,6 +2,8 @@ package com.veggofresh.vendor.service;
 
 import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import com.veggofresh.vendor.dto.request.ShopUpdateRequestDto;
 import com.veggofresh.vendor.dto.request.StoreProfileRequestDto;
 import com.veggofresh.vendor.dto.request.VendorAccountSettingsRequestDto;
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
 /**
  * MODIFIED: registerShop() and submitKycDocuments() removed (see NOTES_VENDOR.md).
  * ADDED: getStoreProfile/updateStoreProfile, getAccountSettings/updateAccountSettings.
+ * MODIFIED: storeImageUrl/profileImageUrl are now real Cloudinary uploads (see
+ * updateStoreProfile/updateAccountSettings) instead of raw URL strings passed by the client.
  */
 @Service
 @RequiredArgsConstructor
@@ -31,6 +35,7 @@ public class VendorShopService {
 
     private final ShopRepository shopRepository;
     private final UserLookupService userLookupService;
+    private final CloudinaryService cloudinaryService;
 
     @Transactional(readOnly = true)
     public ShopDto getShopByOwner(UUID ownerUserId) {
@@ -72,7 +77,6 @@ public class VendorShopService {
 
         shop.setName(request.getStoreName());
         shop.setStoreBio(request.getStoreBio());
-        shop.setStoreImageUrl(request.getStoreImageUrl());
         if (request.getAttributes() != null) {
             shop.setStoreAttributes(String.join(";", request.getAttributes()));
         }
@@ -84,6 +88,17 @@ public class VendorShopService {
         // Keep legacy single-string 'address' in sync for existing callers.
         shop.setAddress(request.getStreetAddress() + ", " + request.getCity()
                 + (shop.getState() != null ? ", " + shop.getState() : "") + " " + request.getZipCode());
+
+        // Store photo: optional, single. Omitting it leaves the current photo untouched --
+        // this does NOT follow the "always overwrite" behavior of the fields above.
+        if (request.getStoreImage() != null && !request.getStoreImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getStoreImage(), "veggofresh/vendors/" + shop.getId() + "/store");
+            String oldPublicId = shop.getStoreImagePublicId();
+            shop.setStoreImageUrl(upload.url());
+            shop.setStoreImagePublicId(upload.publicId());
+            cloudinaryService.deleteQuietly(oldPublicId);
+        }
 
         return mapToStoreProfileDto(shopRepository.save(shop));
     }
@@ -101,10 +116,19 @@ public class VendorShopService {
         if (request.getEmail() != null) shop.setEmail(request.getEmail());
         if (request.getBusinessPhone() != null) shop.setBusinessPhone(request.getBusinessPhone());
         if (request.getBusinessLicenseNumber() != null) shop.setBusinessLicenseNumber(request.getBusinessLicenseNumber());
-        if (request.getProfileImageUrl() != null) shop.setProfileImageUrl(request.getProfileImageUrl());
         if (request.getNewOrderAlertsEnabled() != null) shop.setNewOrderAlertsEnabled(request.getNewOrderAlertsEnabled());
         if (request.getLowStockNotificationsEnabled() != null) shop.setLowStockNotificationsEnabled(request.getLowStockNotificationsEnabled());
         if (request.getPayoutConfirmationsEnabled() != null) shop.setPayoutConfirmationsEnabled(request.getPayoutConfirmationsEnabled());
+
+        // Owner's personal photo: optional, single, patch semantics like every other field here.
+        if (request.getProfileImage() != null && !request.getProfileImage().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getProfileImage(), "veggofresh/vendors/" + shop.getId() + "/profile");
+            String oldPublicId = shop.getProfileImagePublicId();
+            shop.setProfileImageUrl(upload.url());
+            shop.setProfileImagePublicId(upload.publicId());
+            cloudinaryService.deleteQuietly(oldPublicId);
+        }
 
         return mapToAccountSettingsDto(shopRepository.save(shop));
     }

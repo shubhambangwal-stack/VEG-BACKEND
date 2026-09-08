@@ -30,6 +30,10 @@ public class DeliveryPartnerProfile extends BaseEntity {
     @Column(name = "kyc_status", nullable = false, length = 50)
     private DeliveryKycStatus kycStatus = DeliveryKycStatus.PENDING;
 
+    /** NEW THIS ROUND -- set by DeliveryKycServiceImpl.rejectKyc(). Null unless kycStatus == REJECTED. */
+    @Column(name = "rejection_reason", length = 500)
+    private String rejectionReason;
+
     @Column(name = "is_online", nullable = false)
     private boolean online = false;
 
@@ -52,6 +56,21 @@ public class DeliveryPartnerProfile extends BaseEntity {
 
     @Column(length = 255)
     private String email;
+
+    /**
+     * Personal photo, optional/single, uploaded via Cloudinary. Set through
+     * PUT /api/delivery/account-settings alongside fullName/email -- did not exist
+     * at all before this field was added.
+     */
+    @Column(name = "avatar_url", columnDefinition = "TEXT")
+    private String avatarUrl;
+
+    /**
+     * Cloudinary public_id for {@link #avatarUrl}, required to delete the old asset
+     * when the avatar is replaced. Internal only -- never exposed on AccountSettingsResponseDto.
+     */
+    @Column(name = "avatar_public_id", length = 500)
+    private String avatarPublicId;
 
     @Column(name = "vehicle_color", length = 50)
     private String vehicleColor;

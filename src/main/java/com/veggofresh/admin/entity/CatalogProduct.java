@@ -37,6 +37,29 @@ public class CatalogProduct extends BaseEntity {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
+    /**
+     * Optional "was" price for showing a strikethrough + discount badge on
+     * browse screens. null = no discount, show price only. When set, must be
+     * strictly greater than price (enforced in AdminProductServiceImpl, not
+     * here, so the same rule applies consistently on both create and update).
+     * discountPercent is NEVER stored -- always computed fresh from
+     * originalPrice vs price in AdminProductServiceImpl.toDto(), so it can
+     * never drift out of sync with a price edit.
+     */
+    @Column(name = "original_price", precision = 10, scale = 2)
+    private BigDecimal originalPrice;
+
+    /**
+     * Free-text pack-size label shown next to quantity on cart/order lines,
+     * e.g. "1 kg", "6 pcs", "2 pcs (1 kg each)". Deliberately NOT a
+     * structured {value, unit-enum} pair -- nothing in the system ever
+     * parses this string, it's pure display text riding alongside quantity,
+     * so free text covers any pack description without needing its own
+     * variant/weight-based-pricing model.
+     */
+    @Column(length = 100)
+    private String unit;
+
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 

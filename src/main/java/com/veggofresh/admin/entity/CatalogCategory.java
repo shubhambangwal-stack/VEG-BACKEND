@@ -22,6 +22,13 @@ public class CatalogCategory extends BaseEntity {
     @Column(name = "image_url", length = 500)
     private String imageUrl;
 
+    /**
+     * Cloudinary public_id for {@link #imageUrl}, required to delete the old asset when
+     * the category image is replaced. Internal only -- never exposed on CategoryResponseDto.
+     */
+    @Column(name = "image_public_id", length = 500)
+    private String imagePublicId;
+
     @Column(name = "display_order", nullable = false)
     private int displayOrder = 0;
 

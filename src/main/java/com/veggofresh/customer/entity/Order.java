@@ -112,6 +112,16 @@ public class Order extends BaseEntity {
     @Column(name = "delivery_location_note", length = 100)
     private String deliveryLocationNote;
 
+    /**
+     * Real drop-off OTP, pushed here by Delivery ({@code CustomerOrderService.setDropOtpAvailable})
+     * the moment it's generated -- initial issuance right when the delivery partner
+     * marks "picked up", or later if regenerated -- null before that. Replaces the old
+     * fake {@code CustomerOrderService.getDeliveryOtp()} hashCode-derived stand-in,
+     * which is now dead code left in place for compatibility.
+     */
+    @Column(name = "drop_otp", length = 10)
+    private String dropOtp;
+
     // ── Promo Code ───────────────────────────────────────────
     @Column(name = "promo_code", length = 50)
     private String promoCode;
@@ -131,11 +141,37 @@ public class Order extends BaseEntity {
      * Vendor candidates re-validated fresh at checkout time. Every order has
      * exactly one vendor by construction (§3) — this set is the pool the
      * future simultaneous-broadcast + atomic-accept flow (owned by Vendor
-     * module) will broadcast to. Customer module's responsibility stops at
-     * handing off a validated candidate set; nothing reads this yet.
+     * module) will broadcast to. Now also the source of truth
+     * OrderRepository.findByShopId() reads from directly (fixed — see that
+     * query's own comment for the bug this closes).
      */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "order_candidate_vendors", joinColumns = @JoinColumn(name = "order_id"))
     @Column(name = "vendor_id")
     private Set<UUID> candidateVendorIds = new HashSet<>();
+
+    // ── Vendor accept/reject broadcast tracking (this round) ──────────────
+    /**
+     * NULL until a vendor wins the accept race, then permanent. This is the ONLY
+     * source of truth for "who actually has this order" — candidateVendorIds is just
+     * the original broadcast list and never changes after checkout. Every vendor-side
+     * check that gates real actions (mark ready for pickup, order history, status
+     * updates) must check this field, not candidateVendorIds — checking candidacy
+     * instead of acceptance was the root cause of a real bug: a vendor who lost the
+     * accept race could still see and act on an order they never actually won.
+     */
+    @Column(name = "accepted_shop_id")
+    private UUID acceptedShopId;
+
+    /**
+     * Shops that have explicitly declined this order. Rejecting narrows the
+     * candidate pool (candidateVendorIds minus rejectedShopIds = who's still live) —
+     * it does NOT cancel the order by itself. The order only cancels when this set
+     * grows to cover every original candidate, or the accept timeout elapses first,
+     * whichever comes first (see CustomerOrderServiceImpl's sweep).
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "order_rejected_shops", joinColumns = @JoinColumn(name = "order_id"))
+    @Column(name = "shop_id")
+    private Set<UUID> rejectedShopIds = new HashSet<>();
 }

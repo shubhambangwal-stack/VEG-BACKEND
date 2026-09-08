@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -81,6 +82,21 @@ public class CustomerOrderController {
             @PathVariable UUID id) {
         OrderTrackingResponseDto tracking = orderService.trackOrder(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(tracking, "Order tracking information retrieved successfully"));
+    }
+
+    /**
+     * NEW -- standalone way to fetch just the drop OTP, separate from the full track
+     * response above (which also includes it as a field; both read the same value).
+     * Empty string until the order has been picked up -- that's when Delivery pushes
+     * the real code in, not before.
+     */
+    @GetMapping("/{id}/drop-otp")
+    public ResponseEntity<ApiResponse<Map<String, String>>> getDropOtp(@PathVariable UUID id) {
+        String dropOtp = orderService.getDropOtp(SecurityUtils.getCurrentUserId(), id);
+        String message = dropOtp == null
+                ? "Drop OTP not yet available -- it appears once your order has been picked up"
+                : "Drop OTP retrieved successfully";
+        return ResponseEntity.ok(ApiResponse.success(Map.of("dropOtp", dropOtp == null ? "" : dropOtp), message));
     }
 
     @PostMapping("/{id}/rating")

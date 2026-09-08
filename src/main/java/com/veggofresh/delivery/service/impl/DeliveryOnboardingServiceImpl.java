@@ -12,8 +12,9 @@ import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
 import com.veggofresh.delivery.repository.DeliveryDocumentRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.service.DeliveryOnboardingService;
-import com.veggofresh.delivery.service.MockFileStorageService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,7 +30,7 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
 
     private final DeliveryPartnerProfileRepository profileRepository;
     private final DeliveryDocumentRepository documentRepository;
-    private final MockFileStorageService fileStorageService;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     @Transactional(readOnly = true)
@@ -113,10 +114,13 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
     // Internal helpers
     // -------------------------------------------------------------------------
 
-    /** Shared with the standalone document-vault endpoint's storage logic (same mock pattern). */
+    /**
+     * Shared with the standalone document-vault endpoint's storage logic -- both write
+     * into the same delivery_documents table, so a re-upload here (e.g. resubmitting a
+     * license photo) correctly replaces whatever was uploaded through the vault too,
+     * and vice versa. Old Cloudinary asset is auto-deleted once the new one succeeds.
+     */
     private void uploadDocument(UUID userId, DeliveryDocumentType type, MultipartFile file) {
-        String fileUrl = fileStorageService.store(file, "delivery-documents/" + userId);
-
         DeliveryDocument doc = documentRepository.findByDeliveryPartnerUserIdAndDocumentType(userId, type)
                 .orElseGet(() -> {
                     DeliveryDocument newDoc = new DeliveryDocument();
@@ -124,9 +128,17 @@ public class DeliveryOnboardingServiceImpl implements DeliveryOnboardingService 
                     newDoc.setDocumentType(type);
                     return newDoc;
                 });
-        doc.setFileUrl(fileUrl);
+
+        CloudinaryUploadResult upload = cloudinaryService.uploadDocument(
+                file, "veggofresh/delivery-documents/" + userId + "/" + type.name());
+        String oldPublicId = doc.getPublicId();
+
+        doc.setFileUrl(upload.url());
+        doc.setPublicId(upload.publicId());
         doc.setStatus(DeliveryDocumentStatus.PENDING);
         documentRepository.save(doc);
+
+        cloudinaryService.deleteQuietly(oldPublicId);
     }
 
     private DeliveryPartnerProfile getOrCreate(UUID userId) {

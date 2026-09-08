@@ -39,4 +39,12 @@ public class VendorDocument extends BaseEntity {
 
     @Column(name = "file_url", length = 500)
     private String fileUrl;
+
+    /**
+     * Cloudinary public_id for {@link #fileUrl}, required to delete the old asset when
+     * this document type is re-uploaded (e.g. renewing an expired license). Internal
+     * only -- never exposed on VendorDocumentResponseDto.
+     */
+    @Column(name = "public_id", length = 500)
+    private String publicId;
 }

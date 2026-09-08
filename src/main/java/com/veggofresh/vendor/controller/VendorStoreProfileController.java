@@ -7,11 +7,12 @@ import com.veggofresh.vendor.dto.response.StoreProfileResponseDto;
 import com.veggofresh.vendor.service.VendorShopService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,9 +30,16 @@ public class VendorStoreProfileController {
         return ResponseEntity.ok(ApiResponse.success(profile, "Store profile retrieved successfully"));
     }
 
-    @PutMapping
+    /**
+     * Updates the store profile, including the store photo, in one call. Send as
+     * {@code multipart/form-data}; include the {@code storeImage} file part to replace
+     * the current store photo (auto-deletes the old one from Cloudinary), or omit it to
+     * leave the existing photo unchanged. All other fields keep their previous
+     * required/optional behavior.
+     */
+    @PutMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<StoreProfileResponseDto>> updateStoreProfile(
-            @Valid @RequestBody StoreProfileRequestDto request) {
+            @Valid @ModelAttribute StoreProfileRequestDto request) {
         var profile = vendorShopService.updateStoreProfile(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(profile, "Store profile updated successfully"));
     }

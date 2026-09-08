@@ -40,6 +40,15 @@ public class DeliveryDocument extends BaseEntity {
     @Column(name = "file_url", length = 500)
     private String fileUrl;
 
+    /**
+     * Cloudinary public_id for {@link #fileUrl}, required to delete the old asset when
+     * this document type is re-uploaded (KYC vault re-upload, or onboarding Step 1/2
+     * license/insurance photos, which write into this same table). Internal only --
+     * never exposed on DeliveryDocumentResponseDto.
+     */
+    @Column(name = "public_id", length = 500)
+    private String publicId;
+
     @Column(name = "expiry_date")
     private LocalDate expiryDate;
 }

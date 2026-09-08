@@ -7,6 +7,13 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+/**
+ * Used for {@code PUT /api/admin/catalog/products/{id}} only -- text/pricing fields.
+ * Stays a plain JSON {@code @RequestBody}. Product images are managed exclusively
+ * through the dedicated endpoints (add/delete/reorder), not through this DTO --
+ * {@code imageUrl} has been removed for that reason. For the multipart create flow
+ * (which requires at least one image up front), see {@link ProductCreateRequestDto}.
+ */
 @Getter
 @Setter
 public class ProductRequestDto {
@@ -29,5 +36,17 @@ public class ProductRequestDto {
     @Digits(integer = 8, fraction = 2)
     private BigDecimal price;
 
-    private String imageUrl;
+    /**
+     * Optional "was" price for the strikethrough/discount badge. Omit or
+     * leave null for no discount. If provided, must be strictly greater
+     * than price -- validated in AdminProductServiceImpl (needs both fields
+     * together, so it can't live as a simple per-field annotation here).
+     */
+    @DecimalMin(value = "0.01", message = "originalPrice must be greater than 0")
+    @Digits(integer = 8, fraction = 2)
+    private BigDecimal originalPrice;
+
+    @NotBlank(message = "unit is required, e.g. '1 kg', '6 pcs'")
+    @Size(max = 100)
+    private String unit;
 }

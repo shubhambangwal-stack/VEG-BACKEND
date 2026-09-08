@@ -24,6 +24,9 @@ public class VendorListingDto {
     private String categoryName;
     private String subcategoryName;
     private BigDecimal price;
+    private BigDecimal originalPrice;
+    private String unit;
+    private Integer discountPercent;
     private String imageUrl;
     private boolean isListed;
 }

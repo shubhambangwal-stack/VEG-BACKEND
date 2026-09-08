@@ -35,4 +35,13 @@ public class OrderItem extends BaseEntity {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
+
+    /**
+     * Snapshotted at checkout time, same moment `price` already is (see
+     * OrderServiceImpl.buildOrderFromCart()) -- NOT a live lookup. An order
+     * from months ago must always show the pack size exactly as it was when
+     * purchased, even if Admin has since changed or renamed that product.
+     */
+    @Column(length = 100)
+    private String unit;
 }

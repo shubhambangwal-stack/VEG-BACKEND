@@ -14,6 +14,8 @@ import com.veggofresh.delivery.repository.DeliveryOnlineSessionRepository;
 import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.service.DeliveryProfileService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.platform.storage.CloudinaryService;
+import com.veggofresh.platform.storage.CloudinaryUploadResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,7 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
     private final DeliveryPartnerProfileRepository profileRepository;
     private final DeliveryOnlineSessionRepository sessionRepository;
     private final UserLookupService userLookupService;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     public DeliveryProfileResponseDto getOrCreateProfile(UUID userId) {
@@ -147,6 +150,16 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
         if (request.getEmergencyContactRelationship() != null) profile.setEmergencyContactRelationship(request.getEmergencyContactRelationship());
         if (request.getEmergencyContactPhone() != null) profile.setEmergencyContactPhone(request.getEmergencyContactPhone());
 
+        // Avatar: optional, single, patch semantics like every other field here.
+        if (request.getAvatar() != null && !request.getAvatar().isEmpty()) {
+            CloudinaryUploadResult upload = cloudinaryService.uploadImage(
+                    request.getAvatar(), "veggofresh/delivery/" + userId + "/avatar");
+            String oldPublicId = profile.getAvatarPublicId();
+            profile.setAvatarUrl(upload.url());
+            profile.setAvatarPublicId(upload.publicId());
+            cloudinaryService.deleteQuietly(oldPublicId);
+        }
+
         profileRepository.save(profile);
 
         UserSummaryDto user = userLookupService.findById(userId).orElseThrow();
@@ -158,6 +171,7 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
                 .fullName(profile.getFullName())
                 .phone(phone)
                 .email(profile.getEmail())
+                .avatarUrl(profile.getAvatarUrl())
                 .vehicleType(profile.getVehicleType())
                 .vehicleColor(profile.getVehicleColor())
                 .pushNotificationsEnabled(profile.isPushNotificationsEnabled())
@@ -166,6 +180,11 @@ public class DeliveryProfileServiceImpl implements DeliveryProfileService {
                 .emergencyContactName(profile.getEmergencyContactName())
                 .emergencyContactRelationship(profile.getEmergencyContactRelationship())
                 .emergencyContactPhone(profile.getEmergencyContactPhone())
+                .licenseNumber(profile.getLicenseNumber())
+                .plateNumber(profile.getPlateNumber())
+                .vehicleModel(profile.getVehicleModel())
+                .manufactureYear(profile.getManufactureYear())
+                .cityOfOperation(profile.getCityOfOperation())
                 .build();
     }
 

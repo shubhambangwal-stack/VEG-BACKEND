@@ -33,6 +33,16 @@ public interface OrderService {
 
     OrderResponseDto getOrderDetails(UUID userId, UUID orderId);
     OrderTrackingResponseDto trackOrder(UUID userId, UUID orderId);
+
+    /**
+     * NEW -- standalone lookup of just the drop OTP, separate from the full track
+     * response (which also includes it as a field). Returns null until Delivery's
+     * issueDropOtp()/regenerateDropOtp() has pushed a value in via
+     * CustomerOrderService.setDropOtpAvailable() -- i.e. from the moment the order is
+     * picked up, not before.
+     */
+    String getDropOtp(UUID userId, UUID orderId);
+
     RatingResponseDto rateOrder(UUID userId, UUID orderId, RatingRequestDto request);
     OrderResponseDto updateOrderStatus(UUID orderId, OrderStatus newStatus);
     OrderResponseDto cancelOrder(UUID userId, UUID orderId);

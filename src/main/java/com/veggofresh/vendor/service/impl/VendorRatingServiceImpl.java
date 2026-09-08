@@ -1,6 +1,10 @@
 package com.veggofresh.vendor.service.impl;
 
+import com.veggofresh.notification.entity.NotificationRecipientRole;
+import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorShopRating;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.repository.VendorShopRatingRepository;
@@ -19,6 +23,7 @@ public class VendorRatingServiceImpl implements VendorRatingService {
 
     private final VendorShopRatingRepository ratingRepository;
     private final ShopRepository shopRepository;
+    private final NotificationService notificationService;
 
     @Override
     public void rateShop(UUID orderId, UUID shopId, UUID customerUserId, int ratingValue, String comment) {
@@ -26,7 +31,7 @@ public class VendorRatingServiceImpl implements VendorRatingService {
             throw new BusinessException("VENDOR_RATING_INVALID", "Rating must be between 1 and 5", HttpStatus.BAD_REQUEST);
         }
 
-        shopRepository.findByIdAndDeletedAtIsNull(shopId)
+        Shop shop = shopRepository.findByIdAndDeletedAtIsNull(shopId)
                 .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND", "Shop not found", HttpStatus.NOT_FOUND));
 
         ratingRepository.findByOrderIdAndShopId(orderId, shopId).ifPresent(r -> {
@@ -40,5 +45,10 @@ public class VendorRatingServiceImpl implements VendorRatingService {
         rating.setRatingValue(ratingValue);
         rating.setComment(comment);
         ratingRepository.save(rating);
+
+        notificationService.send(shop.getOwnerUserId(), NotificationRecipientRole.VENDOR, NotificationType.REVIEW_RECEIVED,
+                "New review received", "A customer rated your shop " + ratingValue + "/5 for order " + orderId,
+                "{\"orderId\":\"" + orderId + "\",\"rating\":" + ratingValue
+                        + ",\"comment\":" + com.veggofresh.notification.util.NotificationJson.str(comment) + "}");
     }
 }

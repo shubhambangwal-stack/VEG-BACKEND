@@ -17,6 +17,8 @@ public class ProductDto {
     private UUID id;
     private String name;
     private BigDecimal price;
+    /** null when there's no active discount -- copied straight from Admin's ProductResponseDto. */
+    private BigDecimal originalPrice;
     private String description;
     private UUID shopId;
     private String shopName;

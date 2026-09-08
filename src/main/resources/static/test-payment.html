@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Razorpay Test Checkout</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; text-align: center; background: #f4f7f6; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 500px; margin: 0 auto; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        button { background: #3399cc; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:hover { background: #287a9f; }
+        #result { margin-top: 20px; font-weight: bold; word-break: break-all; text-align: left; background: #eee; padding: 10px; border-radius: 5px; display: none; }
+        #error-log { color: red; margin-top: 20px; text-align: left; background: #ffe6e6; padding: 10px; border-radius: 5px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Simulate Frontend Checkout</h2>
+    <p>Paste the IDs from Postman below to open Razorpay!</p>
+    
+    <label>Razorpay Key ID</label>
+    <input type="text" id="keyId" value="rzp_test_TTUpC17cOLtNl8">
+    
+    <label>Razorpay Order ID</label>
+    <input type="text" id="orderId" placeholder="order_...">
+    
+    <button id="pay-btn">Pay Now with Razorpay</button>
+    
+    <div id="result"></div>
+    <div id="error-log"></div>
+</div>
+
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+document.getElementById('pay-btn').onclick = function(e){
+    var key = document.getElementById('keyId').value;
+    var order_id = document.getElementById('orderId').value;
+    
+    document.getElementById('error-log').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    
+    if(!order_id || !order_id.startsWith("order_")) {
+        alert("Please enter a valid Razorpay Order ID starting with 'order_'!");
+        return;
+    }
+
+    var options = {
+        "key": key,
+        "name": "VegGoFresh Test",
+        "description": "Test Transaction",
+        "order_id": order_id, // Amount is automatically fetched by Razorpay using this order_id
+        "handler": function (response){
+            var resDiv = document.getElementById('result');
+            resDiv.style.display = 'block';
+            resDiv.innerHTML = 
+                "<span style='color:green'>Payment Success!</span><br><br>" +
+                "<b>razorpay_payment_id:</b> " + response.razorpay_payment_id + "<br>" +
+                "<b>razorpay_order_id:</b> " + response.razorpay_order_id + "<br>" +
+                "<b>razorpay_signature:</b> " + response.razorpay_signature + "<br><br>" +
+                "<i>Copy these 3 values and paste them into Postman <b>4.1 Verify Payment</b></i>";
+        },
+        "prefill": {
+            "name": "Test User",
+            "email": "test@veggofresh.com",
+            "contact": "9999999999"
+        },
+        "theme": {
+            "color": "#3399cc"
+        }
+    };
+    
+    try {
+        var rzp1 = new Razorpay(options);
+        rzp1.on('payment.failed', function (response){
+            var errDiv = document.getElementById('error-log');
+            errDiv.style.display = 'block';
+            errDiv.innerHTML = "<b>Payment Failed!</b><br>" + 
+                               "Reason: " + response.error.reason + "<br>" +
+                               "Description: " + response.error.description + "<br>" +
+                               "Step: " + response.error.step;
+            console.error(response.error);
+        });
+        rzp1.open();
+    } catch (err) {
+        alert("SDK Error: " + err.message);
+    }
+    e.preventDefault();
+}
+</script>
+</body>
+</html>
