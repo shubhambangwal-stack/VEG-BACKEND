@@ -4,6 +4,7 @@ import com.veggofresh.payment.entity.UserBankAccount;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,4 +12,8 @@ import java.util.UUID;
 public interface UserBankAccountRepository extends JpaRepository<UserBankAccount, UUID> {
 
     Optional<UserBankAccount> findByUserId(UUID userId);
+
+    List<UserBankAccount> findAllByIsVerified(boolean isVerified);
+
+    Optional<UserBankAccount> findByIdAndIsVerified(UUID id, boolean isVerified);
 }

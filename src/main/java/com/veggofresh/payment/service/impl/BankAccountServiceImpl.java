@@ -11,7 +11,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -45,8 +47,11 @@ public class BankAccountServiceImpl implements BankAccountService {
         account.setIfscCode(dto.getIfscCode().trim().toUpperCase());
         account.setBankName(dto.getBankName() != null ? dto.getBankName().trim() : null);
         account.setUpiId(dto.getUpiId() != null ? dto.getUpiId().trim() : null);
+        // Reset verification status whenever details are updated — admin must re-verify
+        account.setVerified(false);
 
         UserBankAccount saved = bankAccountRepository.save(account);
+        log.info("Bank account saved for userId={} — verification reset, pending admin review", userId);
         return mapToDto(saved);
     }
 
@@ -55,7 +60,30 @@ public class BankAccountServiceImpl implements BankAccountService {
     public UserBankAccountDto getBankAccountByUserId(UUID userId) {
         return bankAccountRepository.findByUserId(userId)
                 .map(this::mapToDto)
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "No bank account details saved for this user", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND",
+                        "No bank account details saved for this user", HttpStatus.NOT_FOUND));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserBankAccountDto> getPendingBankAccounts() {
+        return bankAccountRepository.findAllByIsVerified(false)
+                .stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public UserBankAccountDto verifyBankAccount(UUID bankAccountId, boolean approve) {
+        UserBankAccount account = bankAccountRepository.findById(bankAccountId)
+                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND",
+                        "Bank account not found with id: " + bankAccountId, HttpStatus.NOT_FOUND));
+
+        account.setVerified(approve);
+        UserBankAccount saved = bankAccountRepository.save(account);
+        log.info("Bank account {} for userId={} — admin set verified={}",
+                bankAccountId, account.getUserId(), approve);
+        return mapToDto(saved);
     }
 
     private UserBankAccountDto mapToDto(UserBankAccount acc) {

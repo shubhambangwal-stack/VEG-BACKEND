@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 /**
  * Deliberately role-agnostic -- Customer, Vendor, and Delivery all have exactly the
  * same wallet shape, so one endpoint serves all three (resolves whoever the bearer
@@ -37,16 +39,44 @@ public class WalletController {
 
     @GetMapping("/balance")
     public ResponseEntity<ApiResponse<WalletBalanceDto>> getBalance() {
-        WalletBalanceDto balance = walletService.getBalance(SecurityUtils.getCurrentUserId());
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        // ADMIN always sees the platform commission wallet balance
+        WalletBalanceDto balance;
+        if (SecurityUtils.hasRole("ADMIN")) {
+            balance = walletService.getBalance(WalletService.PLATFORM_WALLET_USER_ID);
+            balance = WalletBalanceDto.builder()
+                    .userId(currentUserId)
+                    .balance(balance.getBalance())
+                    .build();
+        } else {
+            balance = walletService.getBalance(currentUserId);
+        }
+
         return ResponseEntity.ok(ApiResponse.success(balance, "Wallet balance retrieved successfully"));
+    }
+
+    @GetMapping("/platform-balance")
+    public ResponseEntity<ApiResponse<WalletBalanceDto>> getPlatformBalance() {
+        WalletBalanceDto balance = walletService.getBalance(WalletService.PLATFORM_WALLET_USER_ID);
+        return ResponseEntity.ok(ApiResponse.success(balance, "Platform commission wallet balance retrieved successfully"));
     }
 
     @GetMapping("/transactions")
     public ResponseEntity<ApiResponse<PageResponse<WalletTransactionDto>>> getTransactionHistory(
+            @RequestParam(required = false) String type,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        Page<WalletTransactionDto> result = walletService.getTransactionHistory(
-                SecurityUtils.getCurrentUserId(), PageRequest.of(page, size));
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        // ADMIN always sees the platform commission wallet transactions
+        Page<WalletTransactionDto> result;
+        if (SecurityUtils.hasRole("ADMIN")) {
+            result = walletService.getTransactionHistory(WalletService.PLATFORM_WALLET_USER_ID, type, PageRequest.of(page, size));
+        } else {
+            result = walletService.getTransactionHistory(currentUserId, type, PageRequest.of(page, size));
+        }
+
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(result), "Wallet transaction history retrieved successfully"));
     }
 }

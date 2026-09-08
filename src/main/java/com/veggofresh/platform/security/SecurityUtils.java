@@ -39,4 +39,20 @@ public class SecurityUtils {
 
         throw new BusinessException("UNAUTHORIZED", "User identity cannot be resolved from token", HttpStatus.UNAUTHORIZED);
     }
+
+    /**
+     * Returns true if the current authenticated user has the given role.
+     * Automatically handles the ROLE_ prefix — pass just "ADMIN", "VENDOR", etc.
+     *
+     * @param role role name without ROLE_ prefix (e.g. "ADMIN")
+     */
+    public static boolean hasRole(String role) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        String prefixed = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals(prefixed));
+    }
 }

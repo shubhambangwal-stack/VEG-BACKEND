@@ -15,6 +15,14 @@ public interface VendorListingService {
     /** Browse Admin's catalog with this vendor's current isListed state merged in. */
     Page<VendorListingDto> browseCatalog(UUID ownerUserId, String search, UUID categoryId, UUID subcategoryId, Pageable pageable);
 
+    /**
+     * NEW -- single-product detail, full gallery included (imageUrls). Was
+     * genuinely missing before this round; only list/browse endpoints existed.
+     * Works whether or not this vendor has listed the product -- isListed
+     * reflects this vendor's own state either way, same as browseCatalog.
+     */
+    VendorListingDto getListingDetail(UUID ownerUserId, UUID catalogProductId);
+
     /** Toggle whether this vendor carries a given catalog product. Does not remove it from "mine". */
     VendorListingDto setListed(UUID ownerUserId, UUID catalogProductId, boolean listed);
 

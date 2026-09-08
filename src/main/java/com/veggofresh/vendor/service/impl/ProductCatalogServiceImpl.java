@@ -2,14 +2,17 @@ package com.veggofresh.vendor.service.impl;
 
 import com.veggofresh.admin.dto.response.CategoryResponseDto;
 import com.veggofresh.admin.dto.response.ProductResponseDto;
+import com.veggofresh.admin.dto.response.SubcategoryResponseDto;
 import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.admin.service.CatalogCategoryService;
 import com.veggofresh.admin.service.CatalogSubcategoryService;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.CategoryDto;
+import com.veggofresh.vendor.dto.CategoryTreeDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
 import com.veggofresh.vendor.dto.SubcategoryDto;
+import com.veggofresh.vendor.dto.SubcategoryTreeDto;
 import com.veggofresh.vendor.entity.KycStatus;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorListing;
@@ -117,6 +120,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                         .categoryId(s.getCategoryId())
                         .categoryName(s.getCategoryName())
                         .name(s.getName())
+                        .imageUrl(s.getImageUrl())
                         .isActive(s.isActive())
                         .build());
     }
@@ -140,7 +144,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     }
 
     @Override
-    @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+    @Transactional(readOnly = true)
     public ProductDto getProductById(UUID catalogProductId, double latitude, double longitude) {
         ProductResponseDto product;
         try {
@@ -223,9 +227,57 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                 .collect(Collectors.toSet());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public CategoryTreeDto getCategoryTree(UUID categoryId, double latitude, double longitude) {
+        CategoryResponseDto category = catalogCategoryService.getCategoryById(categoryId);
+        return buildCategoryTree(category, latitude, longitude);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CategoryTreeDto> getFullCatalogTree(double latitude, double longitude) {
+        return catalogCategoryService.listCategories(false).stream()
+                .map(category -> buildCategoryTree(category, latitude, longitude))
+                .collect(Collectors.toList());
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────────
+
+    private CategoryTreeDto buildCategoryTree(CategoryResponseDto category, double latitude, double longitude) {
+        List<SubcategoryTreeDto> subcategoryTrees = catalogSubcategoryService.listByCategory(category.getId()).stream()
+                .map(subcategory -> buildSubcategoryTree(subcategory, latitude, longitude))
+                .collect(Collectors.toList());
+
+        return CategoryTreeDto.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .description(category.getDescription())
+                .imageUrl(category.getImageUrl())
+                .subcategories(subcategoryTrees)
+                .build();
+    }
+
+    private SubcategoryTreeDto buildSubcategoryTree(SubcategoryResponseDto subcategory, double latitude, double longitude) {
+        Page<ProductResponseDto> candidates = adminProductService.searchProducts(
+                null, subcategory.getCategoryId(), subcategory.getId(), PageRequest.of(0, OVERFETCH_SIZE));
+
+        List<ProductDto> products = candidates.getContent().stream()
+                .filter(ProductResponseDto::isActive)
+                .map(p -> toProductDtoIfEligible(p, latitude, longitude))
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(Collectors.toList());
+
+        return SubcategoryTreeDto.builder()
+                .id(subcategory.getId())
+                .name(subcategory.getName())
+                .imageUrl(subcategory.getImageUrl())
+                .products(products)
+                .build();
+    }
 
     private double resolveRadiusKm() {
         return DEFAULT_RADIUS_KM;
@@ -286,6 +338,7 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
                 .shopName(nearestEligible.getName())
                 .category(product.getCategoryName())
                 .imageUrl(product.getImageUrl())
+                .imageUrls(product.getImageUrls())
                 .unit(product.getUnit())
                 .discountPercent(product.getDiscountPercent())
                 // Not sourced from CatalogProduct -- separate, still-deferred

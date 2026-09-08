@@ -356,6 +356,13 @@ public class OrderServiceImpl implements OrderService {
 
         boolean rated = ratingRepository.findByOrderId(orderId).isPresent();
 
+        if ((order.getStatus() == OrderStatus.OUT_FOR_DELIVERY || order.getStatus() == OrderStatus.DELIVERED)
+                && (order.getDropOtp() == null || order.getDropOtp().isBlank())) {
+            String autoOtp = String.format("%06d", new java.security.SecureRandom().nextInt(1000000));
+            order.setDropOtp(autoOtp);
+            orderRepository.save(order);
+        }
+
         return OrderTrackingResponseDto.builder()
                 .orderId(order.getId())
                 .orderNumber(order.getOrderNumber())
@@ -379,10 +386,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public String getDropOtp(UUID userId, UUID orderId) {
         Order order = orderRepository.findByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found", HttpStatus.NOT_FOUND));
+
+        if ((order.getStatus() == OrderStatus.OUT_FOR_DELIVERY || order.getStatus() == OrderStatus.DELIVERED)
+                && (order.getDropOtp() == null || order.getDropOtp().isBlank())) {
+            String autoOtp = String.format("%06d", new java.security.SecureRandom().nextInt(1000000));
+            order.setDropOtp(autoOtp);
+            orderRepository.save(order);
+        }
         return order.getDropOtp();
     }
 
@@ -444,7 +458,12 @@ public class OrderServiceImpl implements OrderService {
 
         if (newStatus == OrderStatus.CONFIRMED) order.setConfirmedAt(Instant.now());
         else if (newStatus == OrderStatus.PREPARING) order.setPreparingAt(Instant.now());
-        else if (newStatus == OrderStatus.OUT_FOR_DELIVERY) order.setOutForDeliveryAt(Instant.now());
+        else if (newStatus == OrderStatus.OUT_FOR_DELIVERY) {
+            order.setOutForDeliveryAt(Instant.now());
+            if (order.getDropOtp() == null || order.getDropOtp().isBlank()) {
+                order.setDropOtp(String.format("%06d", new java.security.SecureRandom().nextInt(1000000)));
+            }
+        }
         else if (newStatus == OrderStatus.DELIVERED) order.setDeliveredAt(Instant.now());
         else if (newStatus == OrderStatus.CANCELLED) order.setCancelledAt(Instant.now());
 
@@ -548,6 +567,8 @@ public class OrderServiceImpl implements OrderService {
 
         walletService.credit(userId, saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
                 saved.getId(), "Refund for cancelled order " + saved.getOrderNumber());
+
+        paymentService.onOrderCancelled(orderId);
 
         return orderResponseMapper.mapToDto(saved);
     }

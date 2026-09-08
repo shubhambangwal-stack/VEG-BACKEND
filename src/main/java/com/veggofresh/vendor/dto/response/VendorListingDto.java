@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,6 +28,14 @@ public class VendorListingDto {
     private BigDecimal originalPrice;
     private String unit;
     private Integer discountPercent;
+    /** Cover image -- kept for backward compatibility with anything only expecting one thumbnail. */
     private String imageUrl;
+
+    /**
+     * GAP FIX: full ordered gallery -- was missing entirely before this round.
+     * Populated straight from Admin's ProductResponseDto.imageUrls.
+     */
+    private List<String> imageUrls;
+
     private boolean isListed;
 }
