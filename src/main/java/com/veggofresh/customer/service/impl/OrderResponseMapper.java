@@ -2,10 +2,16 @@ package com.veggofresh.customer.service.impl;
 
 import com.veggofresh.customer.dto.response.OrderItemResponseDto;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
+import com.veggofresh.customer.entity.CustomerProfile;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.entity.OrderStatus;
+import com.veggofresh.customer.repository.CustomerProfileRepository;
 import com.veggofresh.admin.dto.response.ProductResponseDto;
 import com.veggofresh.admin.service.AdminProductService;
+import com.veggofresh.auth.dto.UserSummaryDto;
+import com.veggofresh.auth.service.UserLookupService;
+import com.veggofresh.vendor.dto.ShopSummaryDto;
+import com.veggofresh.vendor.service.ShopLookupService;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -36,6 +42,9 @@ import java.util.stream.Collectors;
 public class OrderResponseMapper {
 
     private final AdminProductService adminProductService;
+    private final CustomerProfileRepository customerProfileRepository;
+    private final UserLookupService userLookupService;
+    private final ShopLookupService shopLookupService;
 
     public OrderResponseDto mapToDto(Order order) {
         double lat = order.getLatitude();
@@ -64,6 +73,30 @@ public class OrderResponseMapper {
                 .limit(3)
                 .collect(Collectors.toList());
 
+        // Customer's own display name -- always resolvable, harmless to include
+        // regardless of who ends up viewing this DTO (Customer sees their own
+        // name; Vendor/Delivery gate whether they expose it, not whether it's
+        // computed).
+        String customerName = customerProfileRepository.findByUserId(order.getUserId())
+                .map(CustomerProfile::getFullName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElseGet(() -> userLookupService.findById(order.getUserId())
+                        .map(UserSummaryDto::getPhone)
+                        .orElse(null));
+
+        // Vendor identity -- only resolvable once a shop has actually won the
+        // order (acceptedShopId set). Left null before that so nobody -- not
+        // even the customer's own view -- sees vendor identity pre-acceptance.
+        String shopName = null;
+        String shopBusinessPhone = null;
+        if (order.getAcceptedShopId() != null) {
+            ShopSummaryDto shop = shopLookupService.findShopSummaryById(order.getAcceptedShopId()).orElse(null);
+            if (shop != null) {
+                shopName = shop.getName();
+                shopBusinessPhone = shop.getBusinessPhone();
+            }
+        }
+
         return OrderResponseDto.builder()
                 .id(order.getId())
                 .userId(order.getUserId())
@@ -89,6 +122,16 @@ public class OrderResponseMapper {
                 .items(itemDtos)
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())
+                .customerName(customerName)
+                .shopName(shopName)
+                .shopBusinessPhone(shopBusinessPhone)
+                // Delivery agent fields already exist on the Order entity and are
+                // only ever set once a delivery partner accepts the dispatched
+                // assignment (see CustomerOrderService.assignDeliveryAgent) --
+                // simply mapping them straight through gives us the correct
+                // gating for free, with no fake fallback values.
+                .deliveryAgentName(order.getDeliveryAgentName())
+                .deliveryAgentPhone(order.getDeliveryAgentPhone())
                 .build();
     }
 

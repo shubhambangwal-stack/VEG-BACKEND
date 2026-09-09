@@ -107,4 +107,16 @@ public interface CustomerOrderService {
      * Module-boundary-safe: returns a DTO, never the Order @Entity.
      */
     OrderSettlementDto getOrderForSettlement(UUID orderId);
+
+    /**
+     * NEW -- gives Delivery's assignment-detail screen the full item list
+     * (with resolved product names), customer display name, and order totals,
+     * reusing the same shared mapper Customer and Vendor already use so all
+     * three surfaces stay in sync. Callers are responsible for their own
+     * gating (Delivery must only call this for an assignment the requesting
+     * partner has actually accepted -- see DeliveryAssignmentServiceImpl's
+     * mapToFullDto). Throws ORDER_NOT_FOUND if the order doesn't exist.
+     * Module-boundary-safe: returns a DTO, never the Order @Entity.
+     */
+    OrderResponseDto getOrderByIdForFulfillment(UUID orderId);
 }

@@ -39,4 +39,36 @@ public class OrderResponseDto {
     private List<OrderItemResponseDto> items;
     private Instant createdAt;
     private Instant updatedAt;
+
+    /**
+     * The customer's own display name -- always resolvable regardless of order
+     * state (it's the customer's own data), used by Vendor/Delivery's own
+     * gated views of this same DTO (see OrderResponseMapper).
+     */
+    private String customerName;
+
+    /**
+     * Vendor identity -- null until a shop has actually accepted this order
+     * (order.acceptedShopId set). Not the owner's personal phone -- this is
+     * the shop's own business contact number (see ShopLookupService).
+     */
+    private String shopName;
+    private String shopBusinessPhone;
+
+    /**
+     * Delivery partner identity -- null until a partner has accepted the
+     * dispatched assignment (Order.deliveryAgentName/Phone, populated by
+     * CustomerOrderService.assignDeliveryAgent()).
+     */
+    private String deliveryAgentName;
+    private String deliveryAgentPhone;
+
+    /**
+     * Vendor's estimated payout for this order (product subtotal minus the
+     * admin-configured platform commission). Only ever populated by
+     * VendorOrderManagementService after calling the shared mapper -- left
+     * null on every customer-facing response since it's not the customer's
+     * concern. See PlatformSettingsService.getPlatformCommissionPercent().
+     */
+    private java.math.BigDecimal estimatedPayout;
 }

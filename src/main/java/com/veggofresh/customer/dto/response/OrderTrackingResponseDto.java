@@ -22,6 +22,11 @@ public class OrderTrackingResponseDto {
     private String estimatedDeliveryWindow;
     private double currentLatitude;
     private double currentLongitude;
+
+    /** Null until a shop has accepted this order -- see OrderServiceImpl.trackOrder(). */
+    private String shopName;
+    private String shopBusinessPhone;
+
     private String deliveryAgentName;
     private String deliveryAgentPhone;
     private String deliveryAgentPhotoUrl;

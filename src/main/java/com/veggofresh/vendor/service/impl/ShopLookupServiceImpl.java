@@ -1,5 +1,6 @@
 package com.veggofresh.vendor.service.impl;
 
+import com.veggofresh.vendor.dto.ShopSummaryDto;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.repository.ShopRepository;
 import com.veggofresh.vendor.service.ShopLookupService;
@@ -25,5 +26,27 @@ public class ShopLookupServiceImpl implements ShopLookupService {
     public Optional<UUID> findOwnerUserIdByShopId(UUID shopId) {
         return shopRepository.findByIdAndDeletedAtIsNull(shopId)
                 .map(Shop::getOwnerUserId);
+    }
+
+    @Override
+    public Optional<ShopSummaryDto> findShopSummaryById(UUID shopId) {
+        return shopRepository.findByIdAndDeletedAtIsNull(shopId)
+                .map(shop -> ShopSummaryDto.builder()
+                        .shopId(shop.getId())
+                        .name(shop.getName())
+                        .businessPhone(shop.getBusinessPhone())
+                        .address(shop.getAddress())
+                        .build());
+    }
+
+    @Override
+    public Optional<ShopSummaryDto> findShopSummaryByOwnerUserId(UUID ownerUserId) {
+        return shopRepository.findByOwnerUserIdAndDeletedAtIsNull(ownerUserId)
+                .map(shop -> ShopSummaryDto.builder()
+                        .shopId(shop.getId())
+                        .name(shop.getName())
+                        .businessPhone(shop.getBusinessPhone())
+                        .address(shop.getAddress())
+                        .build());
     }
 }

@@ -264,4 +264,12 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
                 .acceptedShopId(order.getAcceptedShopId())
                 .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderResponseDto getOrderByIdForFulfillment(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found: " + orderId));
+        return orderResponseMapper.mapToDto(order);
+    }
 }

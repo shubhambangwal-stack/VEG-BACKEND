@@ -363,6 +363,22 @@ public class OrderServiceImpl implements OrderService {
             orderRepository.save(order);
         }
 
+        // Vendor identity -- null until a shop has actually accepted this
+        // order. FIXED THIS ROUND: deliveryAgentName/Phone below used to fall
+        // back to a fake hardcoded agent ("John Veggie" / a made-up phone
+        // number) whenever no real partner had been assigned yet -- that
+        // fabricated a delivery person who doesn't exist. Now both stay null
+        // until a real partner accepts, same as everywhere else.
+        String shopName = null;
+        String shopBusinessPhone = null;
+        if (order.getAcceptedShopId() != null) {
+            var shop = shopLookupService.findShopSummaryById(order.getAcceptedShopId()).orElse(null);
+            if (shop != null) {
+                shopName = shop.getName();
+                shopBusinessPhone = shop.getBusinessPhone();
+            }
+        }
+
         return OrderTrackingResponseDto.builder()
                 .orderId(order.getId())
                 .orderNumber(order.getOrderNumber())
@@ -371,8 +387,10 @@ public class OrderServiceImpl implements OrderService {
                 .estimatedDeliveryWindow(order.getEstimatedDeliveryWindow() != null ? order.getEstimatedDeliveryWindow() : "20-30 mins")
                 .currentLatitude(order.getLatitude() + 0.001)
                 .currentLongitude(order.getLongitude() - 0.001)
-                .deliveryAgentName(order.getDeliveryAgentName() != null ? order.getDeliveryAgentName() : "John Veggie")
-                .deliveryAgentPhone(order.getDeliveryAgentPhone() != null ? order.getDeliveryAgentPhone() : "+919876543222")
+                .shopName(shopName)
+                .shopBusinessPhone(shopBusinessPhone)
+                .deliveryAgentName(order.getDeliveryAgentName())
+                .deliveryAgentPhone(order.getDeliveryAgentPhone())
                 .deliveryAgentPhotoUrl(order.getDeliveryAgentPhotoUrl())
                 .statusTimeline(timeline)
                 .items(items)
@@ -628,12 +646,25 @@ public class OrderServiceImpl implements OrderService {
                 .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        // Seller of record -- null until a shop has accepted this order.
+        String shopName = null;
+        String shopAddress = null;
+        if (order.getAcceptedShopId() != null) {
+            var shop = shopLookupService.findShopSummaryById(order.getAcceptedShopId()).orElse(null);
+            if (shop != null) {
+                shopName = shop.getName();
+                shopAddress = shop.getAddress();
+            }
+        }
+
         return InvoiceDto.builder()
                 .orderNumber(order.getOrderNumber())
                 .orderDate(order.getCreatedAt().toString())
                 .customerName(customerName)
                 .customerEmail(user.getEmail())
                 .customerPhone(user.getPhone())
+                .shopName(shopName)
+                .shopAddress(shopAddress)
                 .deliveryAddress(order.getDeliveryAddress())
                 .items(lineItems)
                 .subtotal(subtotal)

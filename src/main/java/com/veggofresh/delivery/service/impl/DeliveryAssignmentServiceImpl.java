@@ -26,6 +26,7 @@ import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.customer.entity.Order;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.payment.service.PaymentService;
+import com.veggofresh.vendor.dto.ShopSummaryDto;
 import com.veggofresh.vendor.service.ShopLookupService;
 import com.veggofresh.platform.storage.CloudinaryService;
 import com.veggofresh.platform.storage.CloudinaryUploadResult;
@@ -160,7 +161,11 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 null /* no profile photo field exists on DeliveryPartnerProfile yet */,
                 null /* no real ETA calculation exists yet -- see NOTES_DELIVERY.md */);
 
-        return mapToLightDto(refreshed);
+        // CHANGED THIS ROUND: previously returned mapToLightDto() here, even
+        // though the partner now legitimately owns this assignment and should
+        // immediately see shop phone, customer name/phone, items, and invoice
+        // total without a second call.
+        return mapToFullDto(refreshed);
     }
 
     @Override
@@ -206,7 +211,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.ARRIVED_AT_STORE);
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
@@ -228,7 +233,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         issueDropOtp(assignment, orderId);
         customerOrderService.updateOrderStatus(orderId, "OUT_FOR_DELIVERY");
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
@@ -239,7 +244,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.ARRIVED_AT_DROP);
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
@@ -350,7 +355,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
             log.error("Failed to execute payment settlement for delivered order {}: {}", orderId, e.getMessage(), e);
         }
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
@@ -400,8 +405,12 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
 
         int start = Math.min((int) pageable.getOffset(), all.size());
         int end = Math.min(start + pageable.getPageSize(), all.size());
+        // CHANGED THIS ROUND: every assignment in this list is already owned by
+        // this partner (deliveryPartnerUserId is null until accept, and the
+        // filter above requires it to equal this partner's id) -- so light dto
+        // was under-serving an already-entitled view. Full detail now.
         List<DeliveryAssignmentResponseDto> pageContent = all.subList(start, end).stream()
-                .map(this::mapToLightDto)
+                .map(this::mapToFullDto)
                 .collect(Collectors.toList());
 
         return new PageImpl<>(pageContent, pageable, all.size());
@@ -637,13 +646,14 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     private void recordEarning(DeliveryAssignment assignment) {
+        BigDecimal total = estimateEarning(assignment);
+
         double distanceKm = haversineKm(assignment.getPickupLatitude(), assignment.getPickupLongitude(),
                 assignment.getDropLatitude(), assignment.getDropLongitude());
         BigDecimal distanceFare = RATE_PER_KM.multiply(BigDecimal.valueOf(distanceKm))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         BigDecimal peakBonus = BigDecimal.ZERO; // no surge/demand system exists yet
         BigDecimal tip = BigDecimal.ZERO;       // no tip-collection mechanism exists yet
-        BigDecimal total = BASE_PAY.add(distanceFare).add(peakBonus).add(tip);
 
         EarningRecord record = new EarningRecord();
         record.setDeliveryPartnerUserId(assignment.getDeliveryPartnerUserId());
@@ -676,7 +686,23 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .expiresAt(a.getExpiresAt())
                 .shopName(a.getShopName())
                 .shopAddress(a.getShopAddress())
+                .estimatedEarning(estimateEarning(a))
                 .build();
+    }
+
+    /**
+     * Real settlement formula (recordEarning() below) computed early as a
+     * preview, using the same pickup/drop coordinates -- both already known
+     * the moment the assignment is created (dispatch time), well before any
+     * partner has accepted. peakBonus and tip are always zero right now, so
+     * this preview matches the eventual recorded EarningRecord.amount exactly.
+     */
+    private BigDecimal estimateEarning(DeliveryAssignment a) {
+        double distanceKm = haversineKm(a.getPickupLatitude(), a.getPickupLongitude(),
+                a.getDropLatitude(), a.getDropLongitude());
+        BigDecimal distanceFare = RATE_PER_KM.multiply(BigDecimal.valueOf(distanceKm))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        return BASE_PAY.add(distanceFare);
     }
 
     private ProofOfDeliveryResponseDto mapProofToDto(DeliveryProofOfDelivery proof) {
@@ -692,8 +718,15 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     private DeliveryAssignmentResponseDto mapToFullDto(DeliveryAssignment a) {
+        // Shop's real business phone -- not the owner's personal number.
+        // Falls back to the owner's personal phone only if, for some reason,
+        // no live Shop record can be resolved (defensive; shouldn't happen for
+        // a real dispatched assignment).
         String shopPhone = a.getShopOwnerUserId() != null
-                ? userLookupService.findById(a.getShopOwnerUserId()).map(UserSummaryDto::getPhone).orElse(null)
+                ? shopLookupService.findShopSummaryByOwnerUserId(a.getShopOwnerUserId())
+                        .map(ShopSummaryDto::getBusinessPhone)
+                        .orElseGet(() -> userLookupService.findById(a.getShopOwnerUserId())
+                                .map(UserSummaryDto::getPhone).orElse(null))
                 : null;
         String customerPhone = a.getCustomerUserId() != null
                 ? userLookupService.findById(a.getCustomerUserId()).map(UserSummaryDto::getPhone).orElse(null)
@@ -711,6 +744,33 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .map(this::mapProofToDto)
                 .orElse(null);
 
+        // Full order contents + customer name -- reuses the same shared
+        // OrderResponseMapper Customer/Vendor already use, so item names,
+        // customer display name, and the order total all stay consistent
+        // across every surface. This method is only ever reached via
+        // getAssignmentDetail() (ownership-checked) or the post-accept action
+        // methods below, so it's safe to resolve full order contents here.
+        String customerName = null;
+        List<DeliveryAssignmentResponseDto.OrderItemSummaryDto> items = null;
+        BigDecimal orderTotal = null;
+        try {
+            var order = customerOrderService.getOrderByIdForFulfillment(a.getOrderId());
+            customerName = order.getCustomerName();
+            orderTotal = order.getTotalAmount();
+            items = order.getItems().stream()
+                    .map(item -> DeliveryAssignmentResponseDto.OrderItemSummaryDto.builder()
+                            .productId(item.getProductId())
+                            .productName(item.getProductName())
+                            .quantity(item.getQuantity())
+                            .price(item.getPrice())
+                            .subTotal(item.getSubTotal())
+                            .build())
+                    .collect(Collectors.toList());
+        } catch (BusinessException e) {
+            log.warn("Could not resolve order fulfillment detail for assignment {} (orderId={}): {}",
+                    a.getId(), a.getOrderId(), e.getMessage());
+        }
+
         return DeliveryAssignmentResponseDto.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -724,7 +784,11 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .shopName(a.getShopName())
                 .shopAddress(a.getShopAddress())
                 .shopPhone(shopPhone)
+                .customerName(customerName)
                 .customerPhone(customerPhone)
+                .estimatedEarning(estimateEarning(a))
+                .items(items)
+                .orderTotal(orderTotal)
                 .timeline(timeline)
                 .proofOfDelivery(proofDto)
                 .build();

@@ -18,6 +18,11 @@ public class InvoiceDto {
     private String customerName;
     private String customerEmail;
     private String customerPhone;
+
+    /** Seller of record -- null until a shop has accepted this order. */
+    private String shopName;
+    private String shopAddress;
+
     private String deliveryAddress;
     private List<InvoiceLineItemDto> items;
     private BigDecimal subtotal;
