@@ -300,8 +300,8 @@ public class CartServiceImpl implements CartService {
             }
         }
 
-        BigDecimal deliveryFee = BigDecimal.valueOf(5.00);
-        BigDecimal estimatedTax = total.multiply(BigDecimal.valueOf(0.05));
+        BigDecimal deliveryFee = BigDecimal.valueOf(20.00); // fixed ₹20 delivery fee
+        BigDecimal estimatedTax = BigDecimal.valueOf(5.00);  // fixed ₹5 platform fee
         BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
 
         int itemCount = cart.getItems().stream().mapToInt(CartItem::getQuantity).sum();

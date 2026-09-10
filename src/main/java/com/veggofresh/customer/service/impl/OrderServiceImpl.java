@@ -252,12 +252,12 @@ public class OrderServiceImpl implements OrderService {
 
         BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20 delivery per order
         BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5 platform fee
-        BigDecimal estimatedTax = BigDecimal.ZERO;           // no tax applied
+        BigDecimal estimatedTax = platformFee;               // platform fee ₹5
 
         order.setDeliveryFee(deliveryFee);
         order.setEstimatedTax(estimatedTax);
         order.setPromoDiscount(promoDiscount);
-        order.setTotalAmount(subtotal.add(deliveryFee).add(platformFee).subtract(promoDiscount));
+        order.setTotalAmount(subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount));
 
         return order;
     }
@@ -744,10 +744,10 @@ public class OrderServiceImpl implements OrderService {
 
             BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20
             BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5
-            BigDecimal estimatedTax = BigDecimal.ZERO;
+            BigDecimal estimatedTax = platformFee;               // platform fee ₹5
             // PHASE 1 FIX: read the cart's real promo instead of hardcoding zero.
             BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
-            BigDecimal total = subtotal.add(deliveryFee).add(platformFee).subtract(promoDiscount);
+            BigDecimal total = subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount);
 
             breakdowns.add(CartCheckoutBreakdownDto.builder()
                     .cartId(cart.getId())
