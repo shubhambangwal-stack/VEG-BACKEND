@@ -72,9 +72,11 @@ public class CartServiceImpl implements CartService {
             throw new BusinessException("PRODUCT_NOT_FOUND", "Product not found in catalog", HttpStatus.BAD_REQUEST);
         }
 
-        Set<UUID> productVendorIds = productCatalogService.getShopIdsForProduct(request.getProductId(), location[0], location[1]);
+        Set<UUID> productVendorIds = productCatalogService.getShopIdsForProduct(request.getProductId(), location[0],
+                location[1]);
         if (productVendorIds == null || productVendorIds.isEmpty()) {
-            throw new BusinessException("PRODUCT_NOT_AVAILABLE", "This product currently has no vendor carrying it", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("PRODUCT_NOT_AVAILABLE", "This product currently has no vendor carrying it",
+                    HttpStatus.BAD_REQUEST);
         }
 
         List<Cart> openCarts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
@@ -124,7 +126,8 @@ public class CartServiceImpl implements CartService {
     @Override
     public List<CartResponseDto> updateCartItem(UUID userId, UUID cartItemId, int quantity) {
         CartItem item = cartItemRepository.findByIdAndCart_UserId(cartItemId, userId)
-                .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart",
+                        HttpStatus.NOT_FOUND));
 
         item.setQuantity(quantity);
         cartItemRepository.save(item);
@@ -139,7 +142,8 @@ public class CartServiceImpl implements CartService {
     @Override
     public List<CartResponseDto> removeCartItem(UUID userId, UUID cartItemId) {
         CartItem item = cartItemRepository.findByIdAndCart_UserId(cartItemId, userId)
-                .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart",
+                        HttpStatus.NOT_FOUND));
 
         Cart cart = item.getCart();
         cart.getItems().remove(item);
@@ -196,7 +200,8 @@ public class CartServiceImpl implements CartService {
         List<ProductDto> recommendations = new ArrayList<>();
         for (CartItem item : allItems) {
             try {
-                List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0], location[1]);
+                List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0],
+                        location[1]);
                 if (related != null) {
                     for (ProductDto p : related) {
                         if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
@@ -219,7 +224,8 @@ public class CartServiceImpl implements CartService {
         BigDecimal subtotal = computeSubtotal(cart);
         BigDecimal discount = couponService.validateCoupon(code, subtotal);
         if (discount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("INVALID_PROMO_CODE", "The promo code is invalid or does not meet criteria", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("INVALID_PROMO_CODE", "The promo code is invalid or does not meet criteria",
+                    HttpStatus.BAD_REQUEST);
         }
 
         cart.setPromoCode(code);
@@ -333,7 +339,7 @@ public class CartServiceImpl implements CartService {
             throw new BusinessException("ADDRESS_REQUIRED",
                     "Add a delivery address before browsing or adding items to your cart", HttpStatus.BAD_REQUEST);
         }
-        return new double[]{reference.getLatitude(), reference.getLongitude()};
+        return new double[] { reference.getLatitude(), reference.getLongitude() };
     }
 
     /**

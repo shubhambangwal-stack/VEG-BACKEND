@@ -44,7 +44,4 @@ public class UserBankAccount extends BaseEntity {
 
     @Column(name = "razorpay_fund_account_id", length = 64)
     private String razorpayFundAccountId;
-
-    @Column(name = "is_verified", nullable = false)
-    private boolean isVerified = false;
 }

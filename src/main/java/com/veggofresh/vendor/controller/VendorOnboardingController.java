@@ -2,6 +2,7 @@ package com.veggofresh.vendor.controller;
 
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.security.SecurityUtils;
+import com.veggofresh.vendor.dto.request.VendorBankDetailsRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBasicInfoRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBusinessLocationRequestDto;
 import com.veggofresh.vendor.dto.response.VendorOnboardingChecklistResponseDto;
@@ -19,9 +20,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REPLACES the old VendorOnboardingController (BusinessAddressRequestDto /
- * ApplicationStatusResponseDto / mapKycStatusToFlutterStatus). Delete the old file
- * and its two now-unused DTOs when merging this in -- see NOTES_VENDOR.md.
+ * Vendor onboarding flow — 4 steps + submit:
+ *   Step 1: PUT /basic-info
+ *   Step 2: PUT /business-location
+ *   Step 3: PUT /bank-details
+ *   Step 4: Upload documents via VendorDocumentController (POST /api/vendor/documents/{type})
+ *   Submit: POST /submit
  */
 @RestController
 @RequestMapping("/api/vendor/onboarding")
@@ -49,6 +53,13 @@ public class VendorOnboardingController {
             @Valid @RequestBody VendorBusinessLocationRequestDto request) {
         var status = vendorOnboardingService.submitBusinessLocation(SecurityUtils.getCurrentUserId(), request);
         return ResponseEntity.ok(ApiResponse.success(status, "Business location saved"));
+    }
+
+    @PutMapping("/bank-details")
+    public ResponseEntity<ApiResponse<VendorOnboardingStatusResponseDto>> submitBankDetails(
+            @Valid @RequestBody VendorBankDetailsRequestDto request) {
+        var status = vendorOnboardingService.submitBankDetails(SecurityUtils.getCurrentUserId(), request);
+        return ResponseEntity.ok(ApiResponse.success(status, "Bank details saved"));
     }
 
     @PostMapping("/submit")

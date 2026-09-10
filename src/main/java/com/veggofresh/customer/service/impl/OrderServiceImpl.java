@@ -110,12 +110,14 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Address address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
-                .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected", HttpStatus.BAD_REQUEST));
+                .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
+                        HttpStatus.BAD_REQUEST));
 
         DeliverySlot slot = null;
         if (request.getDeliverySlotId() != null) {
             slot = deliverySlotRepository.findById(request.getDeliverySlotId())
-                    .orElseThrow(() -> new BusinessException("DELIVERY_SLOT_NOT_FOUND", "Selected delivery slot is invalid", HttpStatus.BAD_REQUEST));
+                    .orElseThrow(() -> new BusinessException("DELIVERY_SLOT_NOT_FOUND",
+                            "Selected delivery slot is invalid", HttpStatus.BAD_REQUEST));
         }
 
         List<OrderResponseDto> createdOrders = new ArrayList<>();
@@ -136,7 +138,8 @@ public class OrderServiceImpl implements OrderService {
             // (PROJECT_STATE section 2, "Revisit-after-a-delay edge case").
             Set<UUID> liveIntersection = null;
             for (CartItem item : cart.getItems()) {
-                Set<UUID> vendorsForItem = productCatalogService.getShopIdsForProduct(item.getProductId(), address.getLatitude(), address.getLongitude());
+                Set<UUID> vendorsForItem = productCatalogService.getShopIdsForProduct(item.getProductId(),
+                        address.getLatitude(), address.getLongitude());
                 liveIntersection = (liveIntersection == null)
                         ? new HashSet<>(vendorsForItem != null ? vendorsForItem : Set.of())
                         : intersect(liveIntersection, vendorsForItem != null ? vendorsForItem : Set.of());
@@ -163,11 +166,13 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if (createdOrders.isEmpty()) {
-            throw new BusinessException("CHECKOUT_FAILED", "None of your carts could be checked out — please review the issues", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("CHECKOUT_FAILED",
+                    "None of your carts could be checked out — please review the issues", HttpStatus.BAD_REQUEST);
         }
 
         // PAYMENT INTEGRATION: create a single Razorpay order (hold) covering all
-        // successfully checked-out orders. The frontend uses razorpayOrderId + razorpayKeyId
+        // successfully checked-out orders. The frontend uses razorpayOrderId +
+        // razorpayKeyId
         // to open Razorpay Checkout.js. After the user pays, they call
         // POST /api/payment/orders/verify with the 3 values from Razorpay.
         List<UUID> orderIds = createdOrders.stream()
@@ -193,11 +198,12 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private Order buildOrderFromCart(UUID userId, Cart cart, Address address, DeliverySlot slot,
-                                      OrderRequestDto request, Set<UUID> resolvedVendorIds) {
+            OrderRequestDto request, Set<UUID> resolvedVendorIds) {
         Order order = new Order();
         order.setUserId(userId);
         order.setStatus(OrderStatus.PLACED);
-        order.setDeliveryAddress(address.getAddressLine1() + ", " + address.getCity() + ", " + address.getState() + " - " + address.getPostalCode());
+        order.setDeliveryAddress(address.getAddressLine1() + ", " + address.getCity() + ", " + address.getState()
+                + " - " + address.getPostalCode());
         order.setLatitude(address.getLatitude());
         order.setLongitude(address.getLongitude());
         order.setOrderNumber("#DM-" + (100000 + new Random().nextInt(900000)));
@@ -208,9 +214,11 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
 
         for (CartItem item : cart.getItems()) {
-            ProductDto product = productCatalogService.getProductById(item.getProductId(), address.getLatitude(), address.getLongitude());
+            ProductDto product = productCatalogService.getProductById(item.getProductId(), address.getLatitude(),
+                    address.getLongitude());
             if (product == null) {
-                throw new BusinessException("PRODUCT_NOT_FOUND", "One or more products in your cart are no longer available", HttpStatus.BAD_REQUEST);
+                throw new BusinessException("PRODUCT_NOT_FOUND",
+                        "One or more products in your cart are no longer available", HttpStatus.BAD_REQUEST);
             }
 
             OrderItem orderItem = new OrderItem();
@@ -227,7 +235,8 @@ public class OrderServiceImpl implements OrderService {
 
         if (slot != null) {
             order.setDeliveryTimeSlot(slot.getLabel());
-            order.setScheduledDate(request.getScheduledDate() != null ? LocalDate.parse(request.getScheduledDate()) : slot.getDate());
+            order.setScheduledDate(
+                    request.getScheduledDate() != null ? LocalDate.parse(request.getScheduledDate()) : slot.getDate());
         }
 
         if (request.getPaymentMethodId() != null) {
@@ -241,13 +250,14 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
         order.setPromoCode(cart.getPromoCode());
 
-        BigDecimal deliveryFee = BigDecimal.valueOf(5.00);
-        BigDecimal estimatedTax = subtotal.multiply(BigDecimal.valueOf(0.05));
+        BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20 delivery per order
+        BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5 platform fee
+        BigDecimal estimatedTax = BigDecimal.ZERO;           // no tax applied
 
         order.setDeliveryFee(deliveryFee);
         order.setEstimatedTax(estimatedTax);
         order.setPromoDiscount(promoDiscount);
-        order.setTotalAmount(subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount));
+        order.setTotalAmount(subtotal.add(deliveryFee).add(platformFee).subtract(promoDiscount));
 
         return order;
     }
@@ -273,7 +283,8 @@ public class OrderServiceImpl implements OrderService {
     public Page<OrderResponseDto> getOrderHistoryByStatusGroup(UUID userId, String statusGroup, Pageable pageable) {
         Page<Order> orders;
         if ("IN_PROGRESS".equalsIgnoreCase(statusGroup)) {
-            List<OrderStatus> inProgress = List.of(OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.OUT_FOR_DELIVERY);
+            List<OrderStatus> inProgress = List.of(OrderStatus.PLACED, OrderStatus.CONFIRMED, OrderStatus.PREPARING,
+                    OrderStatus.OUT_FOR_DELIVERY);
             orders = orderRepository.findByUserIdAndStatusIn(userId, inProgress, pageable);
         } else if ("DELIVERED".equalsIgnoreCase(statusGroup)) {
             orders = orderRepository.findByUserIdAndStatus(userId, OrderStatus.DELIVERED, pageable);
@@ -313,8 +324,10 @@ public class OrderServiceImpl implements OrderService {
                 .isCurrent(currentStatus == OrderStatus.PLACED)
                 .build());
 
-        Instant preparingAt = order.getPreparingAt() != null ? order.getPreparingAt() :
-                (currentStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal() ? order.getCreatedAt().plus(5, ChronoUnit.MINUTES) : null);
+        Instant preparingAt = order.getPreparingAt() != null ? order.getPreparingAt()
+                : (currentStatus.ordinal() >= OrderStatus.CONFIRMED.ordinal()
+                        ? order.getCreatedAt().plus(5, ChronoUnit.MINUTES)
+                        : null);
         timeline.add(StatusTimelineDto.builder()
                 .step(2)
                 .label("Prepared")
@@ -322,8 +335,10 @@ public class OrderServiceImpl implements OrderService {
                 .isCurrent(currentStatus == OrderStatus.PREPARING || currentStatus == OrderStatus.CONFIRMED)
                 .build());
 
-        Instant outForDeliveryAt = order.getOutForDeliveryAt() != null ? order.getOutForDeliveryAt() :
-                (currentStatus.ordinal() >= OrderStatus.OUT_FOR_DELIVERY.ordinal() ? order.getCreatedAt().plus(15, ChronoUnit.MINUTES) : null);
+        Instant outForDeliveryAt = order.getOutForDeliveryAt() != null ? order.getOutForDeliveryAt()
+                : (currentStatus.ordinal() >= OrderStatus.OUT_FOR_DELIVERY.ordinal()
+                        ? order.getCreatedAt().plus(15, ChronoUnit.MINUTES)
+                        : null);
         timeline.add(StatusTimelineDto.builder()
                 .step(3)
                 .label("On the way")
@@ -384,7 +399,8 @@ public class OrderServiceImpl implements OrderService {
                 .orderNumber(order.getOrderNumber())
                 .status(order.getStatus().name())
                 .deliveryAddress(order.getDeliveryAddress())
-                .estimatedDeliveryWindow(order.getEstimatedDeliveryWindow() != null ? order.getEstimatedDeliveryWindow() : "20-30 mins")
+                .estimatedDeliveryWindow(
+                        order.getEstimatedDeliveryWindow() != null ? order.getEstimatedDeliveryWindow() : "20-30 mins")
                 .currentLatitude(order.getLatitude() + 0.001)
                 .currentLongitude(order.getLongitude() - 0.001)
                 .shopName(shopName)
@@ -424,11 +440,13 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found", HttpStatus.NOT_FOUND));
 
         if (order.getStatus() != OrderStatus.DELIVERED) {
-            throw new BusinessException("ORDER_NOT_DELIVERED", "You can only rate orders that have been delivered", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("ORDER_NOT_DELIVERED", "You can only rate orders that have been delivered",
+                    HttpStatus.BAD_REQUEST);
         }
 
         ratingRepository.findByOrderId(orderId).ifPresent(r -> {
-            throw new BusinessException("ORDER_ALREADY_RATED", "This order has already been rated", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("ORDER_ALREADY_RATED", "This order has already been rated",
+                    HttpStatus.BAD_REQUEST);
         });
 
         // NOTE: unchanged this round — still only writes to Rating, does not
@@ -445,12 +463,13 @@ public class OrderServiceImpl implements OrderService {
         // REVIEW RECEIVED → the shop that actually fulfilled this order.
         UUID shopId = order.getAcceptedShopId();
         if (shopId != null) {
-            shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId ->
-                    notificationService.send(ownerId, NotificationRecipientRole.VENDOR, NotificationType.REVIEW_RECEIVED,
-                            "New review received",
-                            "A customer rated " + request.getRatingValue() + "/5 for order " + order.getOrderNumber(),
-                            "{\"orderId\":\"" + orderId + "\",\"rating\":" + request.getRatingValue()
-                                    + ",\"comment\":" + com.veggofresh.notification.util.NotificationJson.str(request.getComment()) + "}"));
+            shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId -> notificationService.send(ownerId,
+                    NotificationRecipientRole.VENDOR, NotificationType.REVIEW_RECEIVED,
+                    "New review received",
+                    "A customer rated " + request.getRatingValue() + "/5 for order " + order.getOrderNumber(),
+                    "{\"orderId\":\"" + orderId + "\",\"rating\":" + request.getRatingValue()
+                            + ",\"comment\":"
+                            + com.veggofresh.notification.util.NotificationJson.str(request.getComment()) + "}"));
         }
 
         return RatingResponseDto.builder()
@@ -474,16 +493,19 @@ public class OrderServiceImpl implements OrderService {
 
         order.setStatus(newStatus);
 
-        if (newStatus == OrderStatus.CONFIRMED) order.setConfirmedAt(Instant.now());
-        else if (newStatus == OrderStatus.PREPARING) order.setPreparingAt(Instant.now());
+        if (newStatus == OrderStatus.CONFIRMED)
+            order.setConfirmedAt(Instant.now());
+        else if (newStatus == OrderStatus.PREPARING)
+            order.setPreparingAt(Instant.now());
         else if (newStatus == OrderStatus.OUT_FOR_DELIVERY) {
             order.setOutForDeliveryAt(Instant.now());
             if (order.getDropOtp() == null || order.getDropOtp().isBlank()) {
                 order.setDropOtp(String.format("%06d", new java.security.SecureRandom().nextInt(1000000)));
             }
-        }
-        else if (newStatus == OrderStatus.DELIVERED) order.setDeliveredAt(Instant.now());
-        else if (newStatus == OrderStatus.CANCELLED) order.setCancelledAt(Instant.now());
+        } else if (newStatus == OrderStatus.DELIVERED)
+            order.setDeliveredAt(Instant.now());
+        else if (newStatus == OrderStatus.CANCELLED)
+            order.setCancelledAt(Instant.now());
 
         Order saved = orderRepository.save(order);
 
@@ -542,14 +564,17 @@ public class OrderServiceImpl implements OrderService {
      */
     private void notifyOrderPlaced(UUID customerUserId, Order saved) {
         notificationService.send(customerUserId, NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_PLACED,
-                "Order placed successfully", "Your order " + saved.getOrderNumber() + " has been placed — a nearby shop will confirm it shortly",
+                "Order placed successfully",
+                "Your order " + saved.getOrderNumber() + " has been placed — a nearby shop will confirm it shortly",
                 orderData(saved));
 
         if (saved.getCandidateVendorIds() != null) {
-            saved.getCandidateVendorIds().forEach(shopId ->
-                    shopLookupService.findOwnerUserIdByShopId(shopId).ifPresent(ownerId ->
-                            notificationService.send(ownerId, NotificationRecipientRole.VENDOR, NotificationType.NEW_ORDER_REQUEST,
-                                    "New order request", "Order " + saved.getOrderNumber() + " is awaiting your shop's decision",
+            saved.getCandidateVendorIds()
+                    .forEach(shopId -> shopLookupService.findOwnerUserIdByShopId(shopId)
+                            .ifPresent(ownerId -> notificationService.send(ownerId, NotificationRecipientRole.VENDOR,
+                                    NotificationType.NEW_ORDER_REQUEST,
+                                    "New order request",
+                                    "Order " + saved.getOrderNumber() + " is awaiting your shop's decision",
                                     orderData(saved))));
         }
     }
@@ -561,10 +586,12 @@ public class OrderServiceImpl implements OrderService {
     /**
      * WALLET WIRING (this round): a cancelled order now actually refunds the
      * customer -- order.getTotalAmount() is credited to their wallet. This applies
-     * regardless of whether real payment collection exists yet (it doesn't -- Payment/
+     * regardless of whether real payment collection exists yet (it doesn't --
+     * Payment/
      * Razorpay integration is still unbuilt) so that the wallet ledger is already
      * correct and ready the moment checkout starts taking real payments. See
-     * NOTES_CUSTOMER.md and Payment module's NOTES_PAYMENT.md for the full reasoning.
+     * NOTES_CUSTOMER.md and Payment module's NOTES_PAYMENT.md for the full
+     * reasoning.
      */
     @Override
     public OrderResponseDto cancelOrder(UUID userId, UUID orderId) {
@@ -572,15 +599,18 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found", HttpStatus.NOT_FOUND));
 
         if (order.getStatus() != OrderStatus.PLACED && order.getStatus() != OrderStatus.CONFIRMED) {
-            throw new BusinessException("ORDER_NOT_CANCELLABLE", "Can only cancel orders that are PLACED or CONFIRMED", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("ORDER_NOT_CANCELLABLE", "Can only cancel orders that are PLACED or CONFIRMED",
+                    HttpStatus.BAD_REQUEST);
         }
 
         order.setStatus(OrderStatus.CANCELLED);
         order.setCancelledAt(Instant.now());
         Order saved = orderRepository.save(order);
 
-        notificationService.send(saved.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CANCELLED,
-                "Your order was cancelled", "Order " + saved.getOrderNumber() + " was cancelled — your refund is on the way",
+        notificationService.send(saved.getUserId(), NotificationRecipientRole.CUSTOMER,
+                NotificationType.ORDER_CANCELLED,
+                "Your order was cancelled",
+                "Order " + saved.getOrderNumber() + " was cancelled — your refund is on the way",
                 orderData(saved));
 
         walletService.credit(userId, saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
@@ -594,13 +624,16 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public List<CartResponseDto> reorder(UUID userId, UUID orderId) {
         Order order = orderRepository.findByIdAndUserId(orderId, userId)
-                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Original order not found", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Original order not found",
+                        HttpStatus.NOT_FOUND));
 
         List<CartResponseDto> result = null;
         for (OrderItem item : order.getItems()) {
-            ProductDto product = productCatalogService.getProductById(item.getProductId(), order.getLatitude(), order.getLongitude());
+            ProductDto product = productCatalogService.getProductById(item.getProductId(), order.getLatitude(),
+                    order.getLongitude());
             if (product == null) {
-                throw new BusinessException("PRODUCT_NOT_AVAILABLE", "Some products from your previous order are no longer available", HttpStatus.BAD_REQUEST);
+                throw new BusinessException("PRODUCT_NOT_AVAILABLE",
+                        "Some products from your previous order are no longer available", HttpStatus.BAD_REQUEST);
             }
 
             CartItemRequestDto req = new CartItemRequestDto();
@@ -681,7 +714,8 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId) {
         Address address = addressRepository.findByIdAndUserId(addressId, userId)
-                .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected", HttpStatus.BAD_REQUEST));
+                .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
+                        HttpStatus.BAD_REQUEST));
 
         List<Cart> carts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
         if (carts.isEmpty()) {
@@ -708,11 +742,12 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
 
-            BigDecimal deliveryFee = BigDecimal.valueOf(5.00);
-            BigDecimal estimatedTax = subtotal.multiply(BigDecimal.valueOf(0.05));
+            BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20
+            BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5
+            BigDecimal estimatedTax = BigDecimal.ZERO;
             // PHASE 1 FIX: read the cart's real promo instead of hardcoding zero.
             BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
-            BigDecimal total = subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount);
+            BigDecimal total = subtotal.add(deliveryFee).add(platformFee).subtract(promoDiscount);
 
             breakdowns.add(CartCheckoutBreakdownDto.builder()
                     .cartId(cart.getId())

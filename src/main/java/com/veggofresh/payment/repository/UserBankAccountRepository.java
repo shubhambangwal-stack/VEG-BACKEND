@@ -12,8 +12,4 @@ import java.util.UUID;
 public interface UserBankAccountRepository extends JpaRepository<UserBankAccount, UUID> {
 
     Optional<UserBankAccount> findByUserId(UUID userId);
-
-    List<UserBankAccount> findAllByIsVerified(boolean isVerified);
-
-    Optional<UserBankAccount> findByIdAndIsVerified(UUID id, boolean isVerified);
 }

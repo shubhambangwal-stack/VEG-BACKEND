@@ -11,6 +11,7 @@ import java.time.Instant;
 public class VendorOnboardingStatusResponseDto {
     private boolean hasBasicInfo;
     private boolean hasBusinessLocation;
+    private boolean hasBankDetails;
     private boolean documentsSubmitted;
     private KycStatus kycStatus;
     private String rejectionReason;

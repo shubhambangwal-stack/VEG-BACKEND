@@ -55,4 +55,22 @@ public class SecurityUtils {
         return authentication.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals(prefixed));
     }
+    /**
+     * Returns the current authenticated user's primary role (without ROLE_ prefix).
+     * e.g. returns "DELIVERY", "VENDOR", "ADMIN", "CUSTOMER".
+     *
+     * @throws BusinessException if no valid user is authenticated or no role found
+     */
+    public static String getCurrentUserRole() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new BusinessException("UNAUTHORIZED", "User is not authenticated", HttpStatus.UNAUTHORIZED);
+        }
+        return authentication.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring("ROLE_".length()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException("UNAUTHORIZED", "No role found in authentication token", HttpStatus.UNAUTHORIZED));
+    }
 }

@@ -30,7 +30,8 @@ public class PayoutController {
     @PostMapping("/request")
     public ResponseEntity<ApiResponse<PayoutResponseDto>> requestPayout(@Valid @RequestBody PayoutRequestCreateDto dto) {
         UUID userId = SecurityUtils.getCurrentUserId();
-        String role = "VENDOR";
+        // Read the authenticated user's actual role (DELIVERY or VENDOR) from JWT
+        String role = SecurityUtils.getCurrentUserRole();
         PayoutResponseDto response = payoutService.requestPayout(userId, role, dto);
         return ResponseEntity.ok(ApiResponse.success(response, "Payout withdrawal request submitted successfully"));
     }

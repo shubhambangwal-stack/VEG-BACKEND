@@ -2,6 +2,9 @@ package com.veggofresh.payment.service.impl;
 
 import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
+import com.veggofresh.delivery.entity.DeliveryKycStatus;
+import com.veggofresh.delivery.entity.DeliveryPartnerProfile;
+import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.payment.client.RazorpayXClient;
 import com.veggofresh.payment.config.RazorpayProperties;
 import com.veggofresh.payment.dto.AdminPayoutActionDto;
@@ -18,6 +21,9 @@ import com.veggofresh.payment.service.PayoutService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.entity.KycStatus;
+import com.veggofresh.vendor.entity.Shop;
+import com.veggofresh.vendor.repository.ShopRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -47,31 +53,34 @@ public class PayoutServiceImpl implements PayoutService {
     private final RazorpayProperties razorpayProperties;
     private final UserLookupService userLookupService;
 
+    // Option B: direct cross-module repository injection
+    private final DeliveryPartnerProfileRepository deliveryPartnerProfileRepository;
+    private final ShopRepository shopRepository;
+
     @Override
     public PayoutResponseDto requestPayout(UUID userId, String userRole, PayoutRequestCreateDto dto) {
         if (dto.getAmount() == null || dto.getAmount().compareTo(BigDecimal.ONE) < 0) {
             throw new BusinessException("INVALID_PAYOUT_AMOUNT", "Payout amount must be at least 1.00", HttpStatus.BAD_REQUEST);
         }
 
-        // Validate user has bank account saved
-        UserBankAccount bankAccount = userBankAccountRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_REQUIRED",
-                        "Please save your bank account details before requesting a withdrawal", HttpStatus.BAD_REQUEST));
-
-        // Validate bank account is verified by admin
-        if (!bankAccount.isVerified()) {
-            throw new BusinessException("BANK_ACCOUNT_NOT_VERIFIED",
-                    "Your bank account details are pending admin verification. Please wait for approval before requesting a withdrawal.",
-                    HttpStatus.FORBIDDEN);
+        // ── Eligibility: KYC must be APPROVED ─────────────────────────────
+        // Bank details are collected during onboarding for both roles.
+        // No separate admin bank-verification gate exists anymore.
+        UserBankAccount bankAccount;
+        if ("DELIVERY".equalsIgnoreCase(userRole)) {
+            bankAccount = resolveAndSyncDeliveryBankAccount(userId);
+        } else {
+            // VENDOR
+            bankAccount = resolveAndSyncVendorBankAccount(userId);
         }
 
-        // Validate wallet balance
+        // ── Wallet balance check ───────────────────────────────────────────
         WalletBalanceDto wallet = walletService.getBalance(userId);
         if (wallet.getBalance().compareTo(dto.getAmount()) < 0) {
             throw new BusinessException("INSUFFICIENT_WALLET_BALANCE", "Insufficient wallet balance for withdrawal", HttpStatus.BAD_REQUEST);
         }
 
-        // Create Payout Request
+        // ── Create Payout Request ──────────────────────────────────────────
         PayoutRequest request = new PayoutRequest();
         request.setUserId(userId);
         request.setUserRole(userRole != null ? userRole.toUpperCase() : "VENDOR");
@@ -90,6 +99,77 @@ public class PayoutServiceImpl implements PayoutService {
         );
 
         return mapToDto(request, bankAccount);
+    }
+
+    /**
+     * Checks that delivery KYC is APPROVED, then auto-syncs bank details from
+     * DeliveryPartnerProfile into the UserBankAccount table (creating/updating as needed).
+     * This means delivery partners never have to re-enter bank details separately.
+     */
+    private UserBankAccount resolveAndSyncDeliveryBankAccount(UUID userId) {
+        DeliveryPartnerProfile profile = deliveryPartnerProfileRepository.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROFILE_NOT_FOUND",
+                        "Delivery partner profile not found", HttpStatus.NOT_FOUND));
+
+        if (profile.getKycStatus() != DeliveryKycStatus.APPROVED) {
+            throw new BusinessException("KYC_NOT_APPROVED",
+                    "Your KYC application must be approved before you can request a withdrawal. Current status: "
+                            + profile.getKycStatus(), HttpStatus.FORBIDDEN);
+        }
+
+        if (profile.getAccountNumber() == null || profile.getAccountNumber().isBlank()) {
+            throw new BusinessException("BANK_ACCOUNT_REQUIRED",
+                    "Bank details are missing from your onboarding profile. Please contact support.", HttpStatus.BAD_REQUEST);
+        }
+
+        // Auto-sync: upsert UserBankAccount from onboarding data
+        UserBankAccount account = userBankAccountRepository.findByUserId(userId)
+                .orElseGet(() -> {
+                    UserBankAccount a = new UserBankAccount();
+                    a.setUserId(userId);
+                    return a;
+                });
+
+        account.setAccountHolderName(profile.getAccountHolderName());
+        account.setAccountNumber(profile.getAccountNumber());
+        account.setIfscCode(profile.getIfscCode());
+        account.setBankName(profile.getBankName());
+        return userBankAccountRepository.save(account);
+    }
+
+    /**
+     * Checks that vendor KYC is APPROVED, then auto-syncs bank details from the
+     * Shop entity into the UserBankAccount table.
+     */
+    private UserBankAccount resolveAndSyncVendorBankAccount(UUID userId) {
+        Shop shop = shopRepository.findByOwnerUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException("VENDOR_SHOP_NOT_FOUND",
+                        "Vendor shop not found", HttpStatus.NOT_FOUND));
+
+        if (shop.getKycStatus() != KycStatus.APPROVED) {
+            throw new BusinessException("KYC_NOT_APPROVED",
+                    "Your KYC application must be approved before you can request a withdrawal. Current status: "
+                            + shop.getKycStatus(), HttpStatus.FORBIDDEN);
+        }
+
+        if (shop.getAccountNumber() == null || shop.getAccountNumber().isBlank()) {
+            throw new BusinessException("BANK_ACCOUNT_REQUIRED",
+                    "Bank details are missing from your onboarding profile. Please complete Step 3 (bank details) of onboarding.", HttpStatus.BAD_REQUEST);
+        }
+
+        // Auto-sync: upsert UserBankAccount from onboarding data
+        UserBankAccount account = userBankAccountRepository.findByUserId(userId)
+                .orElseGet(() -> {
+                    UserBankAccount a = new UserBankAccount();
+                    a.setUserId(userId);
+                    return a;
+                });
+
+        account.setAccountHolderName(shop.getAccountHolderName());
+        account.setAccountNumber(shop.getAccountNumber());
+        account.setIfscCode(shop.getIfscCode());
+        account.setBankName(shop.getBankName());
+        return userBankAccountRepository.save(account);
     }
 
     @Override
@@ -291,7 +371,6 @@ public class PayoutServiceImpl implements PayoutService {
                 .ifscCode(bankAccount.getIfscCode())
                 .bankName(bankAccount.getBankName())
                 .upiId(bankAccount.getUpiId())
-                .isVerified(bankAccount.isVerified())
                 .build() : null;
 
         return PayoutResponseDto.builder()

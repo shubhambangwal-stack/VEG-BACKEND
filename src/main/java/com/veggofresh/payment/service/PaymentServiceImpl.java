@@ -1,6 +1,5 @@
 package com.veggofresh.payment.service;
 
-import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
@@ -22,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,13 +29,16 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Orchestrates Razorpay payment lifecycle: hold → verify → capture/void → settle.
+ * Orchestrates Razorpay payment lifecycle: hold → verify → capture/void →
+ * settle.
  *
  * Key design decisions:
  * 1. One Razorpay order per checkout() call (batch), not per Customer Order.
- * 2. Capture happens exactly once per batch, for the sum of ACCEPTED lines, once
- *    ALL lines resolve — because Razorpay only allows one capture per payment.
- * 3. Void/cancellation before capture = no money ever collected; after capture = wallet credit.
+ * 2. Capture happens exactly once per batch, for the sum of ACCEPTED lines,
+ * once
+ * ALL lines resolve — because Razorpay only allows one capture per payment.
+ * 3. Void/cancellation before capture = no money ever collected; after capture
+ * = wallet credit.
  * 4. Settlement (Phase 3) = virtual ledger split, no new Razorpay calls.
  */
 @Slf4j
@@ -49,7 +50,6 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentOrderLineRepository paymentOrderLineRepository;
     private final RazorpayClient razorpayClient;
     private final WalletService walletService;
-    private final PlatformSettingsService platformSettingsService;
     private final com.veggofresh.payment.config.RazorpayProperties razorpayProperties;
     private final NotificationService notificationService;
 
@@ -57,12 +57,13 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public PaymentHoldResponseDto createHold(UUID userId, List<UUID> orderIds, List<BigDecimal> orderAmounts) {
         if (orderIds.isEmpty()) {
-            throw new BusinessException("PAYMENT_NO_ORDERS", "Cannot create a payment hold with no orders", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("PAYMENT_NO_ORDERS", "Cannot create a payment hold with no orders",
+                    HttpStatus.BAD_REQUEST);
         }
 
         BigDecimal total = orderAmounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 1. Save the entity first with a dummy Razorpay ID to get the JVM UUID 
+        // 1. Save the entity first with a dummy Razorpay ID to get the JVM UUID
         // without violating the NOT NULL constraint if Razorpay fails.
         PaymentOrder paymentOrder = new PaymentOrder();
         paymentOrder.setUserId(userId);
@@ -112,7 +113,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public PaymentHoldResponseDto createTopupHold(UUID userId, BigDecimal amount) {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException("INVALID_TOPUP_AMOUNT", "Top-up amount must be greater than zero", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("INVALID_TOPUP_AMOUNT", "Top-up amount must be greater than zero",
+                    HttpStatus.BAD_REQUEST);
         }
 
         PaymentOrder paymentOrder = new PaymentOrder();
@@ -141,7 +143,8 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public void verifyPayment(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
         // 1. Verify HMAC-SHA256 signature (Razorpay Checkout.js convention)
-        boolean signatureValid = razorpayClient.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+        boolean signatureValid = razorpayClient.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId,
+                razorpaySignature);
         if (!signatureValid) {
             throw new BusinessException("PAYMENT_SIGNATURE_INVALID",
                     "Payment signature verification failed -- this request may be forged", HttpStatus.BAD_REQUEST);
@@ -151,7 +154,8 @@ public class PaymentServiceImpl implements PaymentService {
         RazorpayPaymentStatus gatewayStatus = razorpayClient.fetchPaymentStatus(razorpayPaymentId);
         if (!gatewayStatus.isAuthorized()) {
             throw new BusinessException("PAYMENT_NOT_AUTHORIZED",
-                    "Payment is not in authorized state on Razorpay (status: " + gatewayStatus.status() + ")", HttpStatus.BAD_REQUEST);
+                    "Payment is not in authorized state on Razorpay (status: " + gatewayStatus.status() + ")",
+                    HttpStatus.BAD_REQUEST);
         }
 
         // 3. Update our PaymentOrder
@@ -169,26 +173,26 @@ public class PaymentServiceImpl implements PaymentService {
         paymentOrder.setStatus(PaymentOrderStatus.AUTHORIZED);
         paymentOrder.setAuthorizedAt(Instant.now());
         paymentOrderRepository.save(paymentOrder);
-        
-        log.info("Payment verified and authorized: paymentOrderId={} razorpayPaymentId={}", paymentOrder.getId(), razorpayPaymentId);
+
+        log.info("Payment verified and authorized: paymentOrderId={} razorpayPaymentId={}", paymentOrder.getId(),
+                razorpayPaymentId);
 
         // If it's a top-up, we auto-capture immediately (no vendor acceptance needed)
         if (paymentOrder.isTopup()) {
             log.info("Auto-capturing top-up paymentOrderId={}", paymentOrder.getId());
             razorpayClient.capturePayment(razorpayPaymentId, paymentOrder.getTotalAmount(), paymentOrder.getCurrency());
-            
+
             paymentOrder.setStatus(PaymentOrderStatus.CAPTURED);
             paymentOrder.setCapturedAmount(paymentOrder.getTotalAmount());
             paymentOrder.setCapturedAt(Instant.now());
             paymentOrderRepository.save(paymentOrder);
-            
+
             walletService.credit(
-                paymentOrder.getUserId(), 
-                paymentOrder.getTotalAmount(), 
-                WalletTransactionReason.WALLET_TOP_UP, 
-                paymentOrder.getId(), 
-                "Wallet top-up via Razorpay"
-            );
+                    paymentOrder.getUserId(),
+                    paymentOrder.getTotalAmount(),
+                    WalletTransactionReason.WALLET_TOP_UP,
+                    paymentOrder.getId(),
+                    "Wallet top-up via Razorpay");
             notifyPaymentSuccess(paymentOrder.getUserId(), paymentOrder.getId(), paymentOrder.getTotalAmount());
             log.info("Top-up complete. Wallet credited for paymentOrderId={}", paymentOrder.getId());
         }
@@ -206,7 +210,8 @@ public class PaymentServiceImpl implements PaymentService {
 
         PaymentOrderLine line = lineOpt.get();
         if (line.getStatus() != PaymentOrderLineStatus.PENDING) {
-            log.warn("onOrderAccepted: line for orderId={} is already {} -- idempotent no-op", orderId, line.getStatus());
+            log.warn("onOrderAccepted: line for orderId={} is already {} -- idempotent no-op", orderId,
+                    line.getStatus());
             return;
         }
 
@@ -280,31 +285,29 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public void onDeliveryCompleted(UUID orderId, BigDecimal orderSubtotal, BigDecimal deliveryFee,
-                                    UUID vendorUserId, UUID deliveryPartnerUserId) {
-        BigDecimal commissionPercent = platformSettingsService.getPlatformCommissionPercent();
-        BigDecimal platformCut = orderSubtotal
-                .multiply(commissionPercent)
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
-        BigDecimal vendorShare = orderSubtotal.subtract(platformCut);
+            UUID vendorUserId, UUID deliveryPartnerUserId) {
+        // Fixed fee model: ₹5 platform fee, ₹20 delivery fee per order
+        // Vendor receives full product subtotal (no % cut)
+        final BigDecimal PLATFORM_FEE = BigDecimal.valueOf(5.00);
 
         if (vendorUserId != null) {
-            walletService.credit(vendorUserId, vendorShare,
+            walletService.credit(vendorUserId, orderSubtotal,
                     WalletTransactionReason.ORDER_VENDOR_SETTLEMENT,
-                    orderId, "Revenue from completed order (net of " + commissionPercent + "% platform commission)");
+                    orderId, "Revenue from completed order (full product amount, ₹5 platform fee charged separately)");
         }
 
         if (deliveryPartnerUserId != null) {
             walletService.credit(deliveryPartnerUserId, deliveryFee,
                     WalletTransactionReason.ORDER_DELIVERY_SETTLEMENT,
-                    orderId, "Delivery earnings for completed order");
+                    orderId, "Delivery earnings for completed order (₹" + deliveryFee + " fixed)");
         }
 
-        walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, platformCut,
+        walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, PLATFORM_FEE,
                 WalletTransactionReason.ORDER_PLATFORM_COMMISSION,
-                orderId, "Platform commission (" + commissionPercent + "%) on completed order");
+                orderId, "Platform fixed fee (₹5) on completed order");
 
-        log.info("Settlement complete: orderId={} vendorShare={} deliveryFee={} platformCut={}",
-                orderId, vendorShare, deliveryFee, platformCut);
+        log.info("Settlement complete: orderId={} vendorShare={} deliveryFee={} platformFee={}",
+                orderId, orderSubtotal, deliveryFee, PLATFORM_FEE);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -313,7 +316,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Called after every line resolution. If all lines for the batch have resolved,
-     * decides whether to capture (ACCEPTED lines exist) or mark as voided (all VOIDED).
+     * decides whether to capture (ACCEPTED lines exist) or mark as voided (all
+     * VOIDED).
      * Uses a row-level lock on the PaymentOrder to prevent two concurrent line
      * resolutions from both triggering capture.
      */
@@ -343,7 +347,8 @@ public class PaymentServiceImpl implements PaymentService {
 
         // At least one accepted -- capture the sum of accepted lines
         if (batch.getRazorpayPaymentId() == null) {
-            log.warn("Batch {} ready to capture but razorpayPaymentId is null (customer may not have verified yet)", paymentOrderId);
+            log.warn("Batch {} ready to capture but razorpayPaymentId is null (customer may not have verified yet)",
+                    paymentOrderId);
             return;
         }
 
@@ -383,6 +388,7 @@ public class PaymentServiceImpl implements PaymentService {
     private void notifyPaymentFailed(UUID customerUserId, UUID paymentOrderId, String reason) {
         notificationService.send(customerUserId, NotificationRecipientRole.CUSTOMER, NotificationType.PAYMENT_FAILED,
                 "Payment failed", "Your payment could not be completed" + (reason != null ? " — try again" : ""),
-                "{\"paymentOrderId\":\"" + paymentOrderId + "\",\"reason\":\"" + (reason != null ? reason : "") + "\"}");
+                "{\"paymentOrderId\":\"" + paymentOrderId + "\",\"reason\":\"" + (reason != null ? reason : "")
+                        + "\"}");
     }
 }

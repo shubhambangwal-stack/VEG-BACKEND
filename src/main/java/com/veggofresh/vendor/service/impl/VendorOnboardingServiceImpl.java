@@ -1,6 +1,7 @@
 package com.veggofresh.vendor.service.impl;
 
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.vendor.dto.request.VendorBankDetailsRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBasicInfoRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBusinessLocationRequestDto;
 import com.veggofresh.vendor.dto.response.VendorOnboardingChecklistResponseDto;
@@ -73,9 +74,25 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
     }
 
     @Override
-    public VendorOnboardingStatusResponseDto submitApplication(UUID ownerUserId) {
+    public VendorOnboardingStatusResponseDto submitBankDetails(UUID ownerUserId, VendorBankDetailsRequestDto request) {
         Shop shop = getOrCreate(ownerUserId);
         requireBusinessLocationDone(shop);
+
+        shop.setBankName(request.getBankName());
+        shop.setAccountHolderName(request.getAccountHolderName());
+        shop.setAccountNumber(request.getAccountNumber());
+        shop.setIfscCode(request.getIfscCode());
+        shop.setAgreedToPayoutTerms(request.isAgreedToPayoutTerms());
+        shop.setHasBankDetails(true);
+        shopRepository.save(shop);
+
+        return mapToStatusDto(shop);
+    }
+
+    @Override
+    public VendorOnboardingStatusResponseDto submitApplication(UUID ownerUserId) {
+        Shop shop = getOrCreate(ownerUserId);
+        requireBankDetailsDone(shop);
 
         List<VendorDocumentType> missing = List.of(VendorDocumentType.values()).stream()
                 .filter(type -> documentRepository.findByShopIdAndDocumentType(shop.getId(), type)
@@ -145,7 +162,13 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
 
     private void requireBusinessLocationDone(Shop shop) {
         if (!shop.isHasBusinessLocation()) {
-            throw new BusinessException("VENDOR_ONBOARDING_LOCATION_REQUIRED", "Submit business location before documents", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("VENDOR_ONBOARDING_LOCATION_REQUIRED", "Submit business location before bank details", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void requireBankDetailsDone(Shop shop) {
+        if (!shop.isHasBankDetails()) {
+            throw new BusinessException("VENDOR_ONBOARDING_BANK_DETAILS_REQUIRED", "Submit bank details before uploading documents and applying", HttpStatus.BAD_REQUEST);
         }
     }
 
@@ -159,6 +182,8 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
             nextAction = VendorOnboardingNextAction.BASIC_INFO;
         } else if (!shop.isHasBusinessLocation()) {
             nextAction = VendorOnboardingNextAction.BUSINESS_LOCATION;
+        } else if (!shop.isHasBankDetails()) {
+            nextAction = VendorOnboardingNextAction.BANK_DETAILS;
         } else if (!documentsSubmitted) {
             nextAction = VendorOnboardingNextAction.VERIFICATION_DOCUMENTS;
         } else if (shop.getKycStatus() == KycStatus.APPROVED) {
@@ -170,6 +195,7 @@ public class VendorOnboardingServiceImpl implements VendorOnboardingService {
         return VendorOnboardingStatusResponseDto.builder()
                 .hasBasicInfo(shop.isHasBasicInfo())
                 .hasBusinessLocation(shop.isHasBusinessLocation())
+                .hasBankDetails(shop.isHasBankDetails())
                 .documentsSubmitted(documentsSubmitted)
                 .kycStatus(shop.getKycStatus())
                 .rejectionReason(shop.getKycRejectionReason())
