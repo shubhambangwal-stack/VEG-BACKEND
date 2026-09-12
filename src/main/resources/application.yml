@@ -89,6 +89,7 @@ veggofresh:
       - ${CORS_ORIGIN_3:http://localhost:8080}
       - ${CORS_ORIGIN_4:http://veggofresh.in}
       - ${CORS_ORIGIN_5:https://veggofresh.in}
+      - ${CORS_ORIGIN_6:https://veg-go.vercel.app}
   jwt:
     # ⚠ REQUIRED: Override JWT_SECRET in all environments.
     # Generate a strong Base64-encoded key (minimum 256 bits):

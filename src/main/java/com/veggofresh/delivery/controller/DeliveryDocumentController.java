@@ -20,6 +20,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.util.List;
 
+import com.veggofresh.delivery.dto.response.DeliveryApplicationDetailsResponseDto;
+
 @RestController
 @RequestMapping("/api/delivery/documents")
 @RequiredArgsConstructor
@@ -29,9 +31,9 @@ public class DeliveryDocumentController {
     private final DeliveryDocumentService deliveryDocumentService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<DeliveryDocumentResponseDto>>> getDocuments() {
-        var documents = deliveryDocumentService.getDocuments(SecurityUtils.getCurrentUserId());
-        return ResponseEntity.ok(ApiResponse.success(documents, "Documents retrieved successfully"));
+    public ResponseEntity<ApiResponse<DeliveryApplicationDetailsResponseDto>> getDocuments() {
+        var details = deliveryDocumentService.getDocuments(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(details, "Application details retrieved successfully"));
     }
 
     @PostMapping("/{type}")
