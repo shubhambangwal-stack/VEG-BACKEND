@@ -40,7 +40,7 @@ veggofresh:
   # Uses Razorpay test-mode keys — safe for local development.
   # In production set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET /
   # RAZORPAY_WEBHOOK_SECRET as environment variables.
-  razorpay:
+ razorpay:
     key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
     key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
     webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=}
