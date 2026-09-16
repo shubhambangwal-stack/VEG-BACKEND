@@ -275,7 +275,8 @@ public class VendorOrderManagementService {
 
         deliveryDispatchService.dispatchOrder(orderId, order.getUserId(), ownerUserId, shop.getName(),
                 shop.getAddress(),
-                shop.getLatitude(), shop.getLongitude(), order.getLatitude(), order.getLongitude());
+                shop.getLatitude(), shop.getLongitude(), order.getLatitude(), order.getLongitude(),
+                order.getDeliveryAddress());
 
         return "Order marked ready for pickup -- nearby delivery partners are being notified";
     }

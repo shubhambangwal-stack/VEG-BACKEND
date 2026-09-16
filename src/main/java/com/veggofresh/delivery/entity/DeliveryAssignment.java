@@ -43,6 +43,17 @@ public class DeliveryAssignment extends BaseEntity {
     @Column(name = "drop_longitude", nullable = false)
     private double dropLongitude;
 
+    /**
+     * The customer's delivery address as free text -- a SNAPSHOT taken at
+     * dispatch time from Order.deliveryAddress, same pattern as shopAddress
+     * below. Previously only dropLatitude/dropLongitude were stored, so a
+     * delivery partner had no human-readable address for the drop point at
+     * all, only coordinates. Nullable to tolerate historical rows created
+     * before this column existed.
+     */
+    @Column(name = "drop_address", length = 500)
+    private String dropAddress;
+
     @Column(name = "assigned_at")
     private Instant assignedAt;
 

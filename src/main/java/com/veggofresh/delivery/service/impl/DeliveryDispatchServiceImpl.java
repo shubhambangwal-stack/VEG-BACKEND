@@ -17,8 +17,8 @@ public class DeliveryDispatchServiceImpl implements DeliveryDispatchService {
 
     @Override
     public void dispatchOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName, String shopAddress,
-                               double pickupLat, double pickupLng, double dropLat, double dropLng) {
+                               double pickupLat, double pickupLng, double dropLat, double dropLng, String dropAddress) {
         deliveryAssignmentService.createAssignmentForOrder(orderId, customerUserId, shopOwnerUserId, shopName, shopAddress,
-                pickupLat, pickupLng, dropLat, dropLng);
+                pickupLat, pickupLng, dropLat, dropLng, dropAddress);
     }
 }

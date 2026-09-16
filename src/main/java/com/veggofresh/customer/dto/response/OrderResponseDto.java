@@ -71,4 +71,16 @@ public class OrderResponseDto {
      * concern. See PlatformSettingsService.getPlatformCommissionPercent().
      */
     private java.math.BigDecimal estimatedPayout;
+
+    /**
+     * Deadline by which a vendor must accept/reject this order request before
+     * the {@code VendorAcceptTimeoutSweepService} auto-cancels it. Computed as
+     * {@code order.createdAt + PlatformSettingsService.getVendorAcceptTimeoutSeconds()}
+     * (admin-configurable). Only ever populated by
+     * {@code CustomerOrderServiceImpl.getOrderRequestsForShop()} -- i.e. only on
+     * the vendor's still-live "order requests" broadcast list, since that's the
+     * only place this deadline is actionable. Left null everywhere else
+     * (customer's own view, a shop's already-accepted order history, etc.).
+     */
+    private Instant vendorAcceptExpiresAt;
 }

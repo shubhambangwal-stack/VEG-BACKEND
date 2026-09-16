@@ -54,9 +54,10 @@ public class DeliveryTestController {
             @RequestParam double pickupLat,
             @RequestParam double pickupLng,
             @RequestParam double dropLat,
-            @RequestParam double dropLng) {
+            @RequestParam double dropLng,
+            @RequestParam(required = false, defaultValue = "Test Drop Address") String dropAddress) {
         deliveryDispatchService.dispatchOrder(orderId, customerUserId, shopOwnerUserId, shopName, shopAddress,
-                pickupLat, pickupLng, dropLat, dropLng);
+                pickupLat, pickupLng, dropLat, dropLng, dropAddress);
         return ResponseEntity.ok(ApiResponse.success("[TEST-ONLY] Assignment dispatched for order " + orderId));
     }
 }

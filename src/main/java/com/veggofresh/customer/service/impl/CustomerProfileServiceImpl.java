@@ -3,6 +3,8 @@ package com.veggofresh.customer.service.impl;
 import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.customer.dto.request.CustomerProfileUpdateRequestDto;
+import com.veggofresh.customer.dto.response.CustomerOnboardingNextAction;
+import com.veggofresh.customer.dto.response.CustomerOnboardingStatusResponseDto;
 import com.veggofresh.customer.dto.response.CustomerProfileResponseDto;
 import com.veggofresh.customer.dto.response.CustomerProfileSummaryDto;
 import com.veggofresh.customer.entity.CustomerProfile;
@@ -93,6 +95,14 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public CustomerOnboardingStatusResponseDto getOnboardingStatus(UUID userId) {
+        requireUser(userId);
+        CustomerProfile profile = getOrCreateEntity(userId);
+        return mapToOnboardingStatusDto(profile);
+    }
+
+    @Override
     public CustomerProfileResponseDto submitBasicInfo(UUID userId, String fullName) {
         UserSummaryDto userSummary = requireUser(userId);
         CustomerProfile profile = getOrCreateEntity(userId);
@@ -130,6 +140,14 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
                 .memberSinceYear(safeYear(profile.getCreatedAt()))
                 .createdAt(profile.getCreatedAt())
                 .updatedAt(profile.getUpdatedAt())
+                .build();
+    }
+
+    private CustomerOnboardingStatusResponseDto mapToOnboardingStatusDto(CustomerProfile profile) {
+        boolean hasBasicInfo = profile.getFullName() != null && !profile.getFullName().isBlank();
+        return CustomerOnboardingStatusResponseDto.builder()
+                .hasBasicInfo(hasBasicInfo)
+                .nextAction(hasBasicInfo ? CustomerOnboardingNextAction.HOME : CustomerOnboardingNextAction.BASIC_INFO)
                 .build();
     }
 

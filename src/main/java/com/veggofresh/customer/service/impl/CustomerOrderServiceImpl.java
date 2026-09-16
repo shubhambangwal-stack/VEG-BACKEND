@@ -145,15 +145,23 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getOrderRequestsForShop(UUID shopId) {
+        int timeoutSeconds = platformSettingsService.getVendorAcceptTimeoutSeconds();
         return orderRepository.findRequestsForShop(shopId, OrderStatus.PLACED).stream()
-                .map(orderResponseMapper::mapToDto)
+                .map(order -> {
+                    OrderResponseDto dto = orderResponseMapper.mapToDto(order);
+                    // Same deadline VendorAcceptTimeoutSweepService itself uses to decide
+                    // when to auto-cancel -- surfaced here so the vendor app can show a
+                    // live countdown instead of the timeout being invisible.
+                    dto.setVendorAcceptExpiresAt(order.getCreatedAt().plusSeconds(timeoutSeconds));
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getAcceptedOrdersForShop(UUID shopId) {
-        return orderRepository.findByAcceptedShopId(shopId).stream()
+        return orderRepository.findByAcceptedShopIdOrderByCreatedAtDesc(shopId).stream()
                 .map(orderResponseMapper::mapToDto)
                 .collect(Collectors.toList());
     }

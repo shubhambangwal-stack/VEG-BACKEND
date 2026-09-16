@@ -19,8 +19,12 @@ import java.util.UUID;
  *
  * NOTE for integration: this currently isn't wired to any real trigger — Customer's
  * OrderServiceImpl.updateOrderStatus() does not yet call this.
+ *
+ * dropAddress ADDED: previously only dropLat/dropLng were passed through, leaving the
+ * delivery partner with coordinates but no human-readable customer address. Callers
+ * should pass Order.deliveryAddress directly — no new lookup required.
  */
 public interface DeliveryDispatchService {
     void dispatchOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName, String shopAddress,
-                        double pickupLat, double pickupLng, double dropLat, double dropLng);
+                        double pickupLat, double pickupLng, double dropLat, double dropLng, String dropAddress);
 }

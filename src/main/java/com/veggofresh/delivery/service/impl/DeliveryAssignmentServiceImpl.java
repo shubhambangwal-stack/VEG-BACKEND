@@ -454,7 +454,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     @Override
     public void createAssignmentForOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName,
             String shopAddress,
-            double pickupLat, double pickupLng, double dropLat, double dropLng) {
+            double pickupLat, double pickupLng, double dropLat, double dropLng, String dropAddress) {
         DeliveryAssignment assignment = new DeliveryAssignment();
         assignment.setOrderId(orderId);
         assignment.setCustomerUserId(customerUserId);
@@ -465,6 +465,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         assignment.setPickupLongitude(pickupLng);
         assignment.setDropLatitude(dropLat);
         assignment.setDropLongitude(dropLng);
+        assignment.setDropAddress(dropAddress);
         assignment.setStatus(DeliveryAssignmentStatus.PENDING);
         assignment.setAssignedAt(Instant.now());
         // NEW: reads Admin's real configured timeout instead of a hardcoded constant.
@@ -538,6 +539,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         newAssignment.setPickupLongitude(previous.getPickupLongitude());
         newAssignment.setDropLatitude(previous.getDropLatitude());
         newAssignment.setDropLongitude(previous.getDropLongitude());
+        newAssignment.setDropAddress(previous.getDropAddress());
         newAssignment.setStatus(DeliveryAssignmentStatus.PENDING);
         newAssignment.setAssignedAt(Instant.now());
         newAssignment.setExpiresAt(
@@ -742,6 +744,21 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
     }
 
     private DeliveryAssignmentResponseDto mapToLightDto(DeliveryAssignment a) {
+        // Thumbnails only -- not customer identity, not item breakdown -- so
+        // safe to resolve pre-accept. Reuses the exact same real data path
+        // (CatalogProduct.imageUrl via the shared OrderResponseMapper) that
+        // mapToFullDto and Customer/Vendor's own order views already use.
+        // Defensive try/catch, same reasoning as mapToFullDto below: this is
+        // a nice-to-have preview, not something that should ever break the
+        // nearby-requests list if order lookup fails for any reason.
+        List<String> itemThumbnails = null;
+        try {
+            itemThumbnails = customerOrderService.getOrderByIdForFulfillment(a.getOrderId()).getItemThumbnails();
+        } catch (BusinessException e) {
+            log.warn("Could not resolve item thumbnails for assignment {} (orderId={}): {}",
+                    a.getId(), a.getOrderId(), e.getMessage());
+        }
+
         return DeliveryAssignmentResponseDto.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -750,11 +767,13 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .pickupLongitude(a.getPickupLongitude())
                 .dropLatitude(a.getDropLatitude())
                 .dropLongitude(a.getDropLongitude())
+                .dropAddress(a.getDropAddress())
                 .assignedAt(a.getAssignedAt())
                 .expiresAt(a.getExpiresAt())
                 .shopName(a.getShopName())
                 .shopAddress(a.getShopAddress())
                 .estimatedEarning(estimateEarning(a))
+                .itemThumbnails(itemThumbnails)
                 .build();
     }
 
@@ -821,10 +840,12 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
         String customerName = null;
         List<DeliveryAssignmentResponseDto.OrderItemSummaryDto> items = null;
         BigDecimal orderTotal = null;
+        List<String> itemThumbnails = null;
         try {
             var order = customerOrderService.getOrderByIdForFulfillment(a.getOrderId());
             customerName = order.getCustomerName();
             orderTotal = order.getTotalAmount();
+            itemThumbnails = order.getItemThumbnails();
             items = order.getItems().stream()
                     .map(item -> DeliveryAssignmentResponseDto.OrderItemSummaryDto.builder()
                             .productId(item.getProductId())
@@ -847,6 +868,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .pickupLongitude(a.getPickupLongitude())
                 .dropLatitude(a.getDropLatitude())
                 .dropLongitude(a.getDropLongitude())
+                .dropAddress(a.getDropAddress())
                 .assignedAt(a.getAssignedAt())
                 .expiresAt(a.getExpiresAt())
                 .shopName(a.getShopName())
@@ -857,6 +879,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                 .estimatedEarning(estimateEarning(a))
                 .items(items)
                 .orderTotal(orderTotal)
+                .itemThumbnails(itemThumbnails)
                 .timeline(timeline)
                 .proofOfDelivery(proofDto)
                 .build();

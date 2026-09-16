@@ -85,5 +85,5 @@ public interface DeliveryAssignmentService {
      * configured deliveryAcceptTimeoutSeconds instead of a hardcoded constant.
      */
     void createAssignmentForOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName, String shopAddress,
-                                   double pickupLat, double pickupLng, double dropLat, double dropLng);
+                                   double pickupLat, double pickupLng, double dropLat, double dropLng, String dropAddress);
 }

@@ -21,6 +21,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -80,11 +81,12 @@ public class CustomerOrderController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        Sort newestFirst = Sort.by(Sort.Direction.DESC, "createdAt");
         Page<OrderResponseDto> history;
         if (status != null && !status.trim().isEmpty()) {
-            history = orderService.getOrderHistoryByStatusGroup(SecurityUtils.getCurrentUserId(), status, PageRequest.of(page, size));
+            history = orderService.getOrderHistoryByStatusGroup(SecurityUtils.getCurrentUserId(), status, PageRequest.of(page, size, newestFirst));
         } else {
-            history = orderService.getOrderHistory(SecurityUtils.getCurrentUserId(), PageRequest.of(page, size));
+            history = orderService.getOrderHistory(SecurityUtils.getCurrentUserId(), PageRequest.of(page, size, newestFirst));
         }
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(history), "Order history retrieved successfully"));
     }

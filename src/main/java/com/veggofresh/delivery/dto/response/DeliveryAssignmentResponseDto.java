@@ -19,6 +19,16 @@ public class DeliveryAssignmentResponseDto {
     private double pickupLongitude;
     private double dropLatitude;
     private double dropLongitude;
+
+    /**
+     * Customer's delivery address as free text -- a dispatch-time snapshot,
+     * same idea as shopAddress below. Populated on both the pre-accept
+     * (light) and post-accept (full) views, same visibility rule as
+     * shopName/shopAddress, since it's needed for navigation before a
+     * partner decides whether to accept.
+     */
+    private String dropAddress;
+
     private Instant assignedAt;
     private Instant expiresAt;
 
@@ -34,6 +44,17 @@ public class DeliveryAssignmentResponseDto {
     private String shopPhone;
     private String customerName;
     private String customerPhone;
+
+    /**
+     * Up to 3 product image URLs for this order -- same source
+     * (CatalogProduct.imageUrl) and shape as OrderResponseDto.itemThumbnails,
+     * resolved via CustomerOrderService.getOrderByIdForFulfillment(orderId).
+     * Populated on BOTH the pre-accept (light/nearby) and post-accept (full)
+     * views, unlike items/customerName/orderTotal below -- product photos
+     * aren't customer-identifying, so there's no reason to withhold them
+     * before a partner decides whether to accept.
+     */
+    private List<String> itemThumbnails;
 
     /**
      * Base pay + distance fare, computed with the exact same formula used at

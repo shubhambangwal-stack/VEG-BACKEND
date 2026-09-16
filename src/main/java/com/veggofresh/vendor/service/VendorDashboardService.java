@@ -133,11 +133,13 @@ public class VendorDashboardService {
         BigDecimal shopAmount = calculateShopRevenueForOrder(order, shopId);
 
         return RecentOrderDto.builder()
-                .orderNumber(order.getId().toString().substring(0, 8).toUpperCase())
+                .id(order.getId())
+                .orderNumber(order.getOrderNumber())
                 .itemsSummary(itemsSummary)
                 .timeAgo(formatTimeAgo(order.getCreatedAt()))
                 .amount(shopAmount.doubleValue())
                 .status(order.getStatus().toLowerCase())
+                .itemThumbnails(order.getItemThumbnails())
                 .build();
     }
 
