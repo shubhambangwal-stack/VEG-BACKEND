@@ -17,13 +17,6 @@ server:
 veggofresh:
   firebase:
     service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
-
-logging:
-  level:
-    com.veggofresh: DEBUG
-    org.springframework.security: INFO
-
-veggofresh:
   razorpay:
     key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
     key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
@@ -31,4 +24,9 @@ veggofresh:
     payouts-enabled: ${RAZORPAY_PAYOUTS_ENABLED:true}
     account-number: ${RAZORPAY_ACCOUNT_NUMBER:2323230073112811}
     platform-commission-percent: 10
+
+logging:
+  level:
+    com.veggofresh: DEBUG
+    org.springframework.security: INFO
 
