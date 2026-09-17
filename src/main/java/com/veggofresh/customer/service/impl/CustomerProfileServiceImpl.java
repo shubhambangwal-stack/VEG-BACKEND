@@ -95,7 +95,6 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
     }
 
     @Override
-    @Transactional(readOnly = true)
     public CustomerOnboardingStatusResponseDto getOnboardingStatus(UUID userId) {
         requireUser(userId);
         CustomerProfile profile = getOrCreateEntity(userId);
