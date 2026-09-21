@@ -46,6 +46,7 @@ import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 import com.veggofresh.vendor.service.ShopLookupService;
+import com.veggofresh.admin.service.PlatformSettingsService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -101,6 +102,7 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentService paymentService;
     private final NotificationService notificationService;
     private final ShopLookupService shopLookupService;
+    private final PlatformSettingsService platformSettingsService;
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
@@ -250,9 +252,9 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
         order.setPromoCode(cart.getPromoCode());
 
-        BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20 delivery per order
-        BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5 platform fee
-        BigDecimal estimatedTax = platformFee;               // platform fee ₹5
+        BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
+        BigDecimal platformFee = platformSettingsService.getPlatformFeeAmount();
+        BigDecimal estimatedTax = platformFee; // platform fee shown as tax line item
 
         order.setDeliveryFee(deliveryFee);
         order.setEstimatedTax(estimatedTax);
@@ -742,9 +744,9 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
 
-            BigDecimal deliveryFee = BigDecimal.valueOf(20.00);  // fixed ₹20
-            BigDecimal platformFee = BigDecimal.valueOf(5.00);   // fixed ₹5
-            BigDecimal estimatedTax = platformFee;               // platform fee ₹5
+            BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
+            BigDecimal platformFee = platformSettingsService.getPlatformFeeAmount();
+            BigDecimal estimatedTax = platformFee; // platform fee shown as tax line item
             // PHASE 1 FIX: read the cart's real promo instead of hardcoding zero.
             BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
             BigDecimal total = subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount);

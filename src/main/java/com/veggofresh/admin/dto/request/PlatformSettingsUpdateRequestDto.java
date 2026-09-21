@@ -29,10 +29,13 @@ public class PlatformSettingsUpdateRequestDto {
     @DecimalMin(value = "0.5", message = "deliveryRadiusKm must be at least 0.5km")
     private Double deliveryRadiusKm;
 
-    @NotNull(message = "platformCommissionPercent is required")
-    @DecimalMin(value = "0.0", message = "platformCommissionPercent cannot be negative")
-    @DecimalMax(value = "100.0", message = "platformCommissionPercent cannot exceed 100")
-    private BigDecimal platformCommissionPercent;
+    @NotNull(message = "platformFeeAmount is required")
+    @DecimalMin(value = "0.0", message = "platformFeeAmount cannot be negative")
+    private BigDecimal platformFeeAmount;
+
+    @NotNull(message = "deliveryFeeAmount is required")
+    @DecimalMin(value = "0.0", message = "deliveryFeeAmount cannot be negative")
+    private BigDecimal deliveryFeeAmount;
 
     @NotNull(message = "vendorAcceptTimeoutSeconds is required")
     @Min(value = 30, message = "vendorAcceptTimeoutSeconds must be at least 30 seconds")

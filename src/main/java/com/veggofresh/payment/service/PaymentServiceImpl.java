@@ -1,5 +1,6 @@
 package com.veggofresh.payment.service;
 
+import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
@@ -52,6 +53,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final WalletService walletService;
     private final com.veggofresh.payment.config.RazorpayProperties razorpayProperties;
     private final NotificationService notificationService;
+    private final PlatformSettingsService platformSettingsService;
 
     @Override
     @Transactional
@@ -286,28 +288,29 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public void onDeliveryCompleted(UUID orderId, BigDecimal orderSubtotal, BigDecimal deliveryFee,
             UUID vendorUserId, UUID deliveryPartnerUserId) {
-        // Fixed fee model: ₹5 platform fee, ₹20 delivery fee per order
-        // Vendor receives full product subtotal (no % cut)
-        final BigDecimal PLATFORM_FEE = BigDecimal.valueOf(5.00);
+        // Dynamic fee model: both delivery fee and platform fee are admin-configurable
+        // via PlatformSettings. No hardcoded rupee values here.
+        BigDecimal platformFee = platformSettingsService.getPlatformFeeAmount();
 
+        // Vendor receives full product subtotal; platform fee is an add-on charged to customer at checkout.
         if (vendorUserId != null) {
             walletService.credit(vendorUserId, orderSubtotal,
                     WalletTransactionReason.ORDER_VENDOR_SETTLEMENT,
-                    orderId, "Revenue from completed order (full product amount, ₹5 platform fee charged separately)");
+                    orderId, "Revenue from completed order");
         }
 
         if (deliveryPartnerUserId != null) {
             walletService.credit(deliveryPartnerUserId, deliveryFee,
                     WalletTransactionReason.ORDER_DELIVERY_SETTLEMENT,
-                    orderId, "Delivery earnings for completed order (₹" + deliveryFee + " fixed)");
+                    orderId, "Delivery earnings for completed order (₹" + deliveryFee + ")");
         }
 
-        walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, PLATFORM_FEE,
+        walletService.credit(WalletService.PLATFORM_WALLET_USER_ID, platformFee,
                 WalletTransactionReason.ORDER_PLATFORM_COMMISSION,
-                orderId, "Platform fixed fee (₹5) on completed order");
+                orderId, "Platform fee (₹" + platformFee + ") on completed order");
 
         log.info("Settlement complete: orderId={} vendorShare={} deliveryFee={} platformFee={}",
-                orderId, orderSubtotal, deliveryFee, PLATFORM_FEE);
+                orderId, orderSubtotal, deliveryFee, platformFee);
     }
 
     // ─────────────────────────────────────────────────────────────────────

@@ -29,9 +29,9 @@ import java.math.BigDecimal;
  * - Rebroadcast max rounds capped at 20, max elapsed at 120 minutes: bounds the
  *   *total* worst-case customer wait across every round combined, independent of the
  *   per-round timeout above.
- * - Radius capped at 50km, commission at 50%: sanity ceilings against Admin fat-finger
- *   input (e.g. typing 500 instead of 50), not derived from any specific design
- *   requirement.
+ * - Radius capped at 50km: sanity ceiling against Admin fat-finger input.
+ * - platformFeeAmount capped at ₹500, deliveryFeeAmount capped at ₹500:
+ *   sanity ceilings to prevent accidental fat-finger values.
  */
 @Service
 @RequiredArgsConstructor
@@ -40,7 +40,8 @@ public class
 PlatformSettingsServiceImpl implements PlatformSettingsService {
 
     public static final double MAX_DELIVERY_RADIUS_KM = 50.0;
-    public static final BigDecimal MAX_PLATFORM_COMMISSION_PERCENT = BigDecimal.valueOf(50.0);
+    public static final BigDecimal MAX_PLATFORM_FEE_AMOUNT = BigDecimal.valueOf(500.00);
+    public static final BigDecimal MAX_DELIVERY_FEE_AMOUNT = BigDecimal.valueOf(500.00);
     public static final int MAX_ACCEPT_TIMEOUT_SECONDS = 1800; // 30 minutes
     public static final int MAX_REBROADCAST_ROUNDS = 20;
     public static final int MAX_REBROADCAST_ELAPSED_MINUTES = 120; // 2 hours
@@ -59,9 +60,13 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
             throw new BusinessException("SETTINGS_RADIUS_TOO_HIGH",
                     "deliveryRadiusKm cannot exceed " + MAX_DELIVERY_RADIUS_KM + "km", HttpStatus.BAD_REQUEST);
         }
-        if (request.getPlatformCommissionPercent().compareTo(MAX_PLATFORM_COMMISSION_PERCENT) > 0) {
-            throw new BusinessException("SETTINGS_COMMISSION_TOO_HIGH",
-                    "platformCommissionPercent cannot exceed " + MAX_PLATFORM_COMMISSION_PERCENT + "%", HttpStatus.BAD_REQUEST);
+        if (request.getPlatformFeeAmount().compareTo(MAX_PLATFORM_FEE_AMOUNT) > 0) {
+            throw new BusinessException("SETTINGS_PLATFORM_FEE_TOO_HIGH",
+                    "platformFeeAmount cannot exceed \u20b9" + MAX_PLATFORM_FEE_AMOUNT, HttpStatus.BAD_REQUEST);
+        }
+        if (request.getDeliveryFeeAmount().compareTo(MAX_DELIVERY_FEE_AMOUNT) > 0) {
+            throw new BusinessException("SETTINGS_DELIVERY_FEE_TOO_HIGH",
+                    "deliveryFeeAmount cannot exceed \u20b9" + MAX_DELIVERY_FEE_AMOUNT, HttpStatus.BAD_REQUEST);
         }
         if (request.getVendorAcceptTimeoutSeconds() > MAX_ACCEPT_TIMEOUT_SECONDS) {
             throw new BusinessException("SETTINGS_VENDOR_TIMEOUT_TOO_HIGH",
@@ -82,7 +87,8 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
 
         PlatformSettings settings = getOrCreateSettings();
         settings.setDeliveryRadiusKm(request.getDeliveryRadiusKm());
-        settings.setPlatformCommissionPercent(request.getPlatformCommissionPercent());
+        settings.setPlatformFeeAmount(request.getPlatformFeeAmount());
+        settings.setDeliveryFeeAmount(request.getDeliveryFeeAmount());
         settings.setVendorAcceptTimeoutSeconds(request.getVendorAcceptTimeoutSeconds());
         settings.setDeliveryAcceptTimeoutSeconds(request.getDeliveryAcceptTimeoutSeconds());
         settings.setRebroadcastMaxRounds(request.getRebroadcastMaxRounds());
@@ -103,8 +109,14 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
 
     @Override
     @Transactional(readOnly = true)
-    public BigDecimal getPlatformCommissionPercent() {
-        return getOrCreateSettings().getPlatformCommissionPercent();
+    public BigDecimal getPlatformFeeAmount() {
+        return getOrCreateSettings().getPlatformFeeAmount();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal getDeliveryFeeAmount() {
+        return getOrCreateSettings().getDeliveryFeeAmount();
     }
 
     @Override
@@ -151,7 +163,8 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
     private PlatformSettingsResponseDto mapToDto(PlatformSettings settings) {
         return PlatformSettingsResponseDto.builder()
                 .deliveryRadiusKm(settings.getDeliveryRadiusKm())
-                .platformCommissionPercent(settings.getPlatformCommissionPercent())
+                .platformFeeAmount(settings.getPlatformFeeAmount())
+                .deliveryFeeAmount(settings.getDeliveryFeeAmount())
                 .vendorAcceptTimeoutSeconds(settings.getVendorAcceptTimeoutSeconds())
                 .deliveryAcceptTimeoutSeconds(settings.getDeliveryAcceptTimeoutSeconds())
                 .rebroadcastMaxRounds(settings.getRebroadcastMaxRounds())
@@ -159,7 +172,8 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
                 .otpExpiryMinutes(settings.getOtpExpiryMinutes())
                 .ceilings(PlatformSettingsCeilingsDto.builder()
                         .maxDeliveryRadiusKm(MAX_DELIVERY_RADIUS_KM)
-                        .maxPlatformCommissionPercent(MAX_PLATFORM_COMMISSION_PERCENT)
+                        .maxPlatformFeeAmount(MAX_PLATFORM_FEE_AMOUNT)
+                        .maxDeliveryFeeAmount(MAX_DELIVERY_FEE_AMOUNT)
                         .maxAcceptTimeoutSeconds(MAX_ACCEPT_TIMEOUT_SECONDS)
                         .maxRebroadcastRounds(MAX_REBROADCAST_ROUNDS)
                         .maxRebroadcastElapsedMinutes(MAX_REBROADCAST_ELAPSED_MINUTES)

@@ -378,7 +378,7 @@ public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService 
                         .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
                         .reduce(BigDecimal.ZERO, BigDecimal::add) : BigDecimal.ZERO;
                 BigDecimal deliveryFee = order.getDeliveryFee() != null ? order.getDeliveryFee()
-                        : BigDecimal.valueOf(20.00); // fixed ₹20 delivery fee
+                        : platformSettingsService.getDeliveryFeeAmount(); // fallback to admin-configured fee
                 UUID vendorUserId = order.getAcceptedShopId() != null
                         ? shopLookupService.findOwnerUserIdByShopId(order.getAcceptedShopId()).orElse(null)
                         : null;

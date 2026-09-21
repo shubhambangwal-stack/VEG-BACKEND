@@ -1,6 +1,7 @@
 package com.veggofresh.customer.service.impl;
 
 import com.veggofresh.admin.service.CouponService;
+import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.customer.dto.request.CartItemRequestDto;
 import com.veggofresh.customer.dto.response.CartItemResponseDto;
 import com.veggofresh.customer.dto.response.CartResponseDto;
@@ -51,6 +52,7 @@ public class CartServiceImpl implements CartService {
     private final AddressRepository addressRepository;
     private final ProductCatalogService productCatalogService;
     private final CouponService couponService;
+    private final PlatformSettingsService platformSettingsService;
 
     @Override
     @Transactional(readOnly = true)
@@ -300,8 +302,8 @@ public class CartServiceImpl implements CartService {
             }
         }
 
-        BigDecimal deliveryFee = BigDecimal.valueOf(20.00); // fixed ₹20 delivery fee
-        BigDecimal estimatedTax = BigDecimal.valueOf(5.00);  // fixed ₹5 platform fee
+        BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
+        BigDecimal estimatedTax = platformSettingsService.getPlatformFeeAmount();
         BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
 
         int itemCount = cart.getItems().stream().mapToInt(CartItem::getQuantity).sum();

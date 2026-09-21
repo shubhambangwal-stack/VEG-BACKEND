@@ -14,7 +14,8 @@ import java.time.Instant;
 @AllArgsConstructor
 public class PlatformSettingsResponseDto {
     private double deliveryRadiusKm;
-    private BigDecimal platformCommissionPercent;
+    private BigDecimal platformFeeAmount;
+    private BigDecimal deliveryFeeAmount;
     private int vendorAcceptTimeoutSeconds;
     private int deliveryAcceptTimeoutSeconds;
     private int rebroadcastMaxRounds;

@@ -30,9 +30,13 @@ public class PlatformSettings extends BaseEntity {
     @Column(name = "delivery_radius_km", nullable = false)
     private double deliveryRadiusKm = 10.0;
 
-    /** Platform's cut of each order, as a percentage (0-100). Replaces Vendor's flat 10% placeholder. */
-    @Column(name = "platform_commission_percent", nullable = false, precision = 5, scale = 2)
-    private BigDecimal platformCommissionPercent = BigDecimal.valueOf(10.0);
+    /** Flat rupee fee the platform charges per order (e.g. ₹5). Configurable by Admin. */
+    @Column(name = "platform_fee_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal platformFeeAmount = BigDecimal.valueOf(5.00);
+
+    /** Flat rupee delivery fee charged to the customer per order (e.g. ₹20). Configurable by Admin. */
+    @Column(name = "delivery_fee_amount", nullable = false, precision = 10, scale = 2)
+    private BigDecimal deliveryFeeAmount = BigDecimal.valueOf(20.00);
 
     /** How long a vendor has to accept an order before it re-broadcasts/times out. */
     @Column(name = "vendor_accept_timeout_seconds", nullable = false)

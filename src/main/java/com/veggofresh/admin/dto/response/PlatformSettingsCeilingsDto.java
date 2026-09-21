@@ -13,7 +13,8 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 public class PlatformSettingsCeilingsDto {
     private double maxDeliveryRadiusKm;
-    private BigDecimal maxPlatformCommissionPercent;
+    private BigDecimal maxPlatformFeeAmount;
+    private BigDecimal maxDeliveryFeeAmount;
     private int maxAcceptTimeoutSeconds;
     private int maxRebroadcastRounds;
     private int maxRebroadcastElapsedMinutes;
