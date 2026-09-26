@@ -1,5 +1,6 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.admin.dto.response.ProductResponseDto;
 import com.veggofresh.admin.service.AdminProductService;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.entity.OrderStatus;
@@ -144,11 +145,13 @@ public class VendorDashboardService {
     }
 
     private String resolveProductName(UUID catalogProductId) {
-        try {
-            return adminProductService.getProductById(catalogProductId).getName();
-        } catch (Exception e) {
-            return "Unknown Product";
-        }
+        // Optional lookup, not getProductById-in-a-try/catch: AdminProductServiceImpl
+        // is @Transactional and joins the caller's transaction, so a thrown
+        // exception would mark it rollback-only and resurface as
+        // UnexpectedRollbackException at commit.
+        return adminProductService.findProductById(catalogProductId)
+                .map(ProductResponseDto::getName)
+                .orElse("Unknown Product");
     }
 
     private String formatTimeAgo(Instant createdAt) {

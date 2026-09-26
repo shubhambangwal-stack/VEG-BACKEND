@@ -98,13 +98,14 @@ public class VendorListingServiceImpl implements VendorListingService {
         List<VendorListingDto> content = listingsPage.getContent().stream()
                 .map(listing -> {
                     // Individual failures (e.g. Admin deactivated/removed the item since
-                    // listing) shouldn't break the whole screen -- skip silently.
-                    try {
-                        ProductResponseDto p = adminProductService.getProductById(listing.getCatalogProductId());
-                        return toDto(p, shop.getId(), listing.isListed());
-                    } catch (Exception e) {
-                        return null;
-                    }
+                    // listing) shouldn't break the whole screen -- skip them. Must use the
+                    // Optional-returning lookup, NOT getProductById inside a try/catch:
+                    // AdminProductServiceImpl is @Transactional and joins THIS method's
+                    // transaction, so a thrown exception would mark it rollback-only and
+                    // resurface as UnexpectedRollbackException at commit.
+                    return adminProductService.findProductById(listing.getCatalogProductId())
+                            .map(p -> toDto(p, shop.getId(), listing.isListed()))
+                            .orElse(null);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());

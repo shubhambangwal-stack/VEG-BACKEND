@@ -8,11 +8,13 @@ import com.veggofresh.admin.repository.PlatformSettingsRepository;
 import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * HARD CEILINGS (PROJECT_STATE: "hard upper bound enforced in code, not just
@@ -33,11 +35,11 @@ import java.math.BigDecimal;
  * - platformFeeAmount capped at ₹500, deliveryFeeAmount capped at ₹500:
  *   sanity ceilings to prevent accidental fat-finger values.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Transactional
-public class
-PlatformSettingsServiceImpl implements PlatformSettingsService {
+@Transactional(readOnly = true)
+public class PlatformSettingsServiceImpl implements PlatformSettingsService {
 
     public static final double MAX_DELIVERY_RADIUS_KM = 50.0;
     public static final BigDecimal MAX_PLATFORM_FEE_AMOUNT = BigDecimal.valueOf(500.00);
@@ -48,13 +50,55 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
 
     private final PlatformSettingsRepository platformSettingsRepository;
 
+    /**
+     * In-process memo of the singleton settings row. Read-mostly by a wide
+     * margin, and these getters are called from inside other modules' write
+     * transactions (twice per cart when mapping a cart response), so keeping
+     * them off the database is both a correctness and a latency win.
+     * Non-volatile on purpose: a benign race just re-reads the row. Updated
+     * only by {@link #updateSettings}, which also writes through the
+     * repository, so a multi-instance deployment converges on the next
+     * read-through after each instance's own write.
+     */
+    private PlatformSettings cachedSettings;
+
     @Override
     @Transactional(readOnly = true)
     public PlatformSettingsResponseDto getSettings() {
-        return mapToDto(getOrCreateSettings());
+        return mapToDto(settingsOrDefaults());
+    }
+
+    /**
+     * Read-only accessor for the singleton row, memoised in-process.
+     *
+     * <p>These getters are called from inside other modules' write transactions
+     * (e.g. twice per cart while mapping a cart response), so they must be cheap
+     * and must never write. Caching also keeps them from issuing two SELECTs per
+     * cart per request, which is what made the old auto-creating version hot
+     * enough to hit the INSERT race in the first place.
+     *
+     * <p>Invalidated by {@link #updateSettings} on write.
+     */
+    private PlatformSettings settingsOrDefaults() {
+        PlatformSettings cached = cachedSettings;
+        if (cached != null) {
+            return cached;
+        }
+        PlatformSettings loaded = findSettings().orElseGet(() -> {
+            // No row yet (should not happen post-V161). Return entity defaults
+            // WITHOUT writing -- creating the row here is exactly the bug this
+            // class is being fixed for. Admin's own update endpoint will persist
+            // a real row on first save.
+            log.warn("platform_settings row missing; serving entity defaults. "
+                    + "Check that V161__seed_platform_settings_row.sql was applied.");
+            return new PlatformSettings();
+        });
+        cachedSettings = loaded;
+        return loaded;
     }
 
     @Override
+    @Transactional
     public PlatformSettingsResponseDto updateSettings(PlatformSettingsUpdateRequestDto request) {
         if (request.getDeliveryRadiusKm() > MAX_DELIVERY_RADIUS_KM) {
             throw new BusinessException("SETTINGS_RADIUS_TOO_HIGH",
@@ -85,7 +129,7 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
                     "rebroadcastMaxElapsedMinutes cannot exceed " + MAX_REBROADCAST_ELAPSED_MINUTES + " minutes (2 hours)", HttpStatus.BAD_REQUEST);
         }
 
-        PlatformSettings settings = getOrCreateSettings();
+        PlatformSettings settings = findSettings().orElseGet(PlatformSettings::new);
         settings.setDeliveryRadiusKm(request.getDeliveryRadiusKm());
         settings.setPlatformFeeAmount(request.getPlatformFeeAmount());
         settings.setDeliveryFeeAmount(request.getDeliveryFeeAmount());
@@ -98,66 +142,91 @@ PlatformSettingsServiceImpl implements PlatformSettingsService {
         // request DTO is the only guard (must be positive).
         settings.setOtpExpiryMinutes(request.getOtpExpiryMinutes());
 
-        return mapToDto(platformSettingsRepository.save(settings));
+        PlatformSettings saved = platformSettingsRepository.save(settings);
+        cachedSettings = saved;
+        return mapToDto(saved);
     }
 
     @Override
     @Transactional(readOnly = true)
     public double getDeliveryRadiusKm() {
-        return getOrCreateSettings().getDeliveryRadiusKm();
+        return settingsOrDefaults().getDeliveryRadiusKm();
     }
 
     @Override
     @Transactional(readOnly = true)
     public BigDecimal getPlatformFeeAmount() {
-        return getOrCreateSettings().getPlatformFeeAmount();
+        return settingsOrDefaults().getPlatformFeeAmount();
     }
 
     @Override
     @Transactional(readOnly = true)
     public BigDecimal getDeliveryFeeAmount() {
-        return getOrCreateSettings().getDeliveryFeeAmount();
+        return settingsOrDefaults().getDeliveryFeeAmount();
     }
 
     @Override
     @Transactional(readOnly = true)
     public int getVendorAcceptTimeoutSeconds() {
-        return getOrCreateSettings().getVendorAcceptTimeoutSeconds();
+        return settingsOrDefaults().getVendorAcceptTimeoutSeconds();
     }
 
     @Override
     @Transactional(readOnly = true)
     public int getDeliveryAcceptTimeoutSeconds() {
-        return getOrCreateSettings().getDeliveryAcceptTimeoutSeconds();
+        return settingsOrDefaults().getDeliveryAcceptTimeoutSeconds();
     }
 
     @Override
     @Transactional(readOnly = true)
     public int getRebroadcastMaxRounds() {
-        return getOrCreateSettings().getRebroadcastMaxRounds();
+        return settingsOrDefaults().getRebroadcastMaxRounds();
     }
 
     @Override
     @Transactional(readOnly = true)
     public int getRebroadcastMaxElapsedMinutes() {
-        return getOrCreateSettings().getRebroadcastMaxElapsedMinutes();
+        return settingsOrDefaults().getRebroadcastMaxElapsedMinutes();
     }
 
     @Override
     @Transactional(readOnly = true)
     public int getOtpExpiryMinutes() {
-        return getOrCreateSettings().getOtpExpiryMinutes();
+        return settingsOrDefaults().getOtpExpiryMinutes();
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────────────
 
-    /** Single-row table -- auto-creates with defaults on first access, same getOrCreate pattern as CustomerProfile. */
-    private PlatformSettings getOrCreateSettings() {
-        return platformSettingsRepository.findAll().stream()
-                .findFirst()
-                .orElseGet(() -> platformSettingsRepository.saveAndFlush(new PlatformSettings()));
+    /**
+     * Single-row table. V161__seed_platform_settings_row.sql now seeds the row,
+     * so the READ path must never write.
+     *
+     * <p>Previously this method did {@code orElseGet(() -> saveAndFlush(new
+     * PlatformSettings()))} and was called from every getter below -- all of
+     * which are declared {@code readOnly = true}. That made it the only
+     * {@code saveAndFlush} in the codebase living inside a read-declared method,
+     * and it caused {@code UnexpectedRollbackException} on
+     * {@code POST /api/customer/carts/items}: {@code CartServiceImpl.mapToDto}
+     * reads the delivery/platform fees once per cart, from inside
+     * {@code addItemToCart}'s write transaction. Two problems:
+     * <ol>
+     *   <li>{@code saveAndFlush} forces an immediate flush of the whole
+     *       persistence context, flushing the cart's still-pending
+     *       {@code Cart}/{@code CartItem} inserts mid-business-logic.</li>
+     *   <li>On the previously-unseeded table, concurrent requests both saw zero
+     *       rows and both tried to INSERT the singleton. The loser's failure
+     *       escaped a nested {@code @Transactional} method, which makes Spring
+     *       mark the shared transaction rollback-only; the caller swallowed it and
+     *       returned "successfully", so it only surfaced at commit.</li>
+     * </ol>
+     *
+     * <p>Reading these values is now a pure SELECT, so it can never poison a
+     * caller's transaction.
+     */
+    private Optional<PlatformSettings> findSettings() {
+        return platformSettingsRepository.findAll().stream().findFirst();
     }
 
     private PlatformSettingsResponseDto mapToDto(PlatformSettings settings) {

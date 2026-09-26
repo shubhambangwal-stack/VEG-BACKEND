@@ -10,6 +10,7 @@ import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
  * the whole list. Now wrapped with safeGetProduct() so it's actually
  * reachable and does what it always visually intended to do.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -75,17 +77,16 @@ public class WishlistServiceImpl implements WishlistService {
 
         List<ProductDto> recommendations = new ArrayList<>();
         for (ProductDto p : wishlist) {
-            try {
-                List<ProductDto> related = productCatalogService.getRelatedProducts(p.getId(), location[0], location[1]);
-                if (related != null) {
-                    for (ProductDto r : related) {
-                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(r.getId()))) {
-                            recommendations.add(r);
-                        }
+            // No try/catch -- a swallowed exception from a nested
+            // @Transactional method still marks this transaction rollback-only
+            // and resurfaces as UnexpectedRollbackException at commit.
+            List<ProductDto> related = productCatalogService.getRelatedProducts(p.getId(), location[0], location[1]);
+            if (related != null) {
+                for (ProductDto r : related) {
+                    if (recommendations.stream().noneMatch(rec -> rec.getId().equals(r.getId()))) {
+                        recommendations.add(r);
                     }
                 }
-            } catch (Exception e) {
-                // Ignore errors
             }
         }
         return recommendations.stream().limit(6).collect(Collectors.toList());
@@ -131,11 +132,16 @@ public class WishlistServiceImpl implements WishlistService {
         return new double[]{reference.getLatitude(), reference.getLongitude()};
     }
 
+    /**
+     * ⚠️ No try/catch on purpose, and don't add one. It uses the non-throwing
+     * {@code findEligibleProductById} because a swallowed exception raised
+     * inside a nested {@code @Transactional} method still marks the caller's
+     * shared transaction rollback-only, resurfacing at commit as
+     * {@code UnexpectedRollbackException}.
+     */
     private ProductDto safeGetProduct(UUID productId, double[] location) {
-        try {
-            return productCatalogService.getProductById(productId, location[0], location[1]);
-        } catch (Exception e) {
-            return null;
-        }
+        return productCatalogService
+                .findEligibleProductById(productId, location[0], location[1])
+                .orElse(null);
     }
 }

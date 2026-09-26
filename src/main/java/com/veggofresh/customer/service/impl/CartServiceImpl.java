@@ -17,6 +17,7 @@ import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
  * operations now require adding one first (ADDRESS_REQUIRED) -- a real
  * behavior change, flagged in NOTES_CUSTOMER.md, not silently introduced.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -201,18 +203,18 @@ public class CartServiceImpl implements CartService {
 
         List<ProductDto> recommendations = new ArrayList<>();
         for (CartItem item : allItems) {
-            try {
-                List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0],
-                        location[1]);
-                if (related != null) {
-                    for (ProductDto p : related) {
-                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
-                            recommendations.add(p);
-                        }
+            // No try/catch. getRelatedProducts throws only when the product row
+            // is genuinely gone, which is a real error worth surfacing --
+            // swallowing it would mark this transaction rollback-only and
+            // resurface as UnexpectedRollbackException at commit.
+            List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0],
+                    location[1]);
+            if (related != null) {
+                for (ProductDto p : related) {
+                    if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
+                        recommendations.add(p);
                     }
                 }
-            } catch (Exception e) {
-                // Ignore errors for individual items
             }
         }
         return recommendations.stream().limit(6).collect(Collectors.toList());
@@ -345,18 +347,21 @@ public class CartServiceImpl implements CartService {
     }
 
     /**
-     * Vendor's getProductById throws rather than returning null on
-     * not-found/not-eligible. Wrapping it here restores the graceful
-     * per-item skip the original `if (product != null)` checks throughout
-     * this class visually intended -- now meaningfully reachable, since
-     * radius eligibility makes "this one item became unavailable" a real,
-     * expected case rather than a rare one.
+     * Resolves one product for response mapping, or null when it is no longer
+     * available to this customer (removed, deactivated, or no vendor carrying it
+     * in range). Callers skip nulls, so one unavailable product doesn't break a
+     * whole cart/wishlist/order response.
+     *
+     * <p>⚠️ Deliberately has NO try/catch. It uses the non-throwing
+     * {@code findEligibleProductById}, because a swallowed exception from a
+     * nested {@code @Transactional} method still marks the caller's shared
+     * transaction rollback-only and resurfaces as
+     * {@code UnexpectedRollbackException} at commit. Never reintroduce a
+     * catch-and-return-null here.
      */
     private ProductDto safeGetProduct(UUID productId, double[] location) {
-        try {
-            return productCatalogService.getProductById(productId, location[0], location[1]);
-        } catch (Exception e) {
-            return null;
-        }
+        return productCatalogService
+                .findEligibleProductById(productId, location[0], location[1])
+                .orElse(null);
     }
 }
