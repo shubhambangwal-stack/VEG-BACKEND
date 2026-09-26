@@ -73,7 +73,16 @@ public class CustomerProfileServiceImpl implements CustomerProfileService {
     @Transactional(readOnly = true)
     public CustomerProfileSummaryDto getProfileSummary(UUID userId) {
         requireUser(userId);
-        CustomerProfile profile = getOrCreateEntity(userId);
+        // Pure lookup, NOT getOrCreateEntity(): this method is readOnly, and
+        // creating the row from a read path is a write inside a readOnly
+        // transaction. A brand-new user's first GET would flush the persistence
+        // context from here, and any failure would mark the caller's shared
+        // transaction rollback-only -- surfacing much later at commit as
+        // UnexpectedRollbackException. A missing profile simply has no fields
+        // yet and zero counts, which is a correct summary; the row gets created
+        // for real by getOrCreateProfile/submitBasicInfo on the write paths.
+        CustomerProfile profile = customerProfileRepository.findByUserId(userId)
+                .orElseGet(CustomerProfile::new);
 
         long orderCount     = orderRepository.countByUserId(userId);
         long favoritesCount = wishlistRepository.countByUserId(userId);
