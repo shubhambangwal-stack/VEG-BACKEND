@@ -106,9 +106,32 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
-        List<Cart> openCarts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
-        if (openCarts.isEmpty()) {
+        List<Cart> allOpenCarts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
+        if (allOpenCarts.isEmpty()) {
             throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
+        }
+
+        // ── Selective checkout: use only the requested carts (if specified) ──
+        // cartIds null/empty → all carts (old behaviour, backward-compat).
+        // cartIds non-empty  → only those carts; others stay open.
+        final List<UUID> requestedCartIds =
+                (request.getCartIds() != null && !request.getCartIds().isEmpty())
+                        ? request.getCartIds()
+                        : null;
+
+        // Build the working set; preserve creation-order for stable "Cart N" labels.
+        List<Cart> cartsToCheckout = (requestedCartIds == null)
+                ? allOpenCarts
+                : allOpenCarts.stream()
+                        .filter(c -> requestedCartIds.contains(c.getId()))
+                        .collect(Collectors.toList());
+
+        if (cartsToCheckout.isEmpty()) {
+            throw new BusinessException("CART_NOT_FOUND",
+                    requestedCartIds != null
+                            ? "None of the specified cart IDs were found in your open carts"
+                            : "You have no items in any cart",
+                    HttpStatus.BAD_REQUEST);
         }
 
         Address address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
@@ -125,13 +148,13 @@ public class OrderServiceImpl implements OrderService {
         List<OrderResponseDto> createdOrders = new ArrayList<>();
         List<CheckoutIssueDto> issues = new ArrayList<>();
         List<Order> placedOrders = new ArrayList<>();
-        int cartIndex = 1;
 
-        for (Cart cart : openCarts) {
+        // Use global position of the cart among ALL open carts for a stable "Cart N" label.
+        for (Cart cart : cartsToCheckout) {
+            int cartIndex = allOpenCarts.indexOf(cart) + 1;
             String cartLabel = "Cart " + cartIndex;
 
             if (cart.getItems() == null || cart.getItems().isEmpty()) {
-                cartIndex++;
                 continue;
             }
 
@@ -153,7 +176,6 @@ public class OrderServiceImpl implements OrderService {
                         .cartLabel(cartLabel)
                         .reason("Some items in this group are no longer available together — remove them to continue, or we'll leave this group out of your order")
                         .build());
-                cartIndex++;
                 continue;
             }
 
@@ -163,8 +185,6 @@ public class OrderServiceImpl implements OrderService {
             placedOrders.add(saved);
 
             cartService.clearCart(userId, cart.getId());
-
-            cartIndex++;
         }
 
         if (createdOrders.isEmpty()) {
@@ -173,10 +193,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // PAYMENT INTEGRATION: create a single Razorpay order (hold) covering all
-        // successfully checked-out orders. The frontend uses razorpayOrderId +
-        // razorpayKeyId
-        // to open Razorpay Checkout.js. After the user pays, they call
-        // POST /api/payment/orders/verify with the 3 values from Razorpay.
+        // successfully checked-out orders in this call. The frontend uses
+        // razorpayOrderId + razorpayKeyId to open Razorpay Checkout.js.
         List<UUID> orderIds = createdOrders.stream()
                 .map(OrderResponseDto::getId)
                 .collect(Collectors.toList());
@@ -189,8 +207,10 @@ public class OrderServiceImpl implements OrderService {
         // so they never outlive a rolled-back checkout.
         placedOrders.forEach(order -> notifyOrderPlaced(userId, order));
 
-        log.info("Checkout complete: {} order(s) created, Razorpay order={}, total={}",
-                createdOrders.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
+        log.info("Checkout complete: {} order(s) created (from {} cart(s) requested), Razorpay order={}, total={}",
+                createdOrders.size(),
+                requestedCartIds != null ? requestedCartIds.size() : "all",
+                paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
 
         return CheckoutResultDto.builder()
                 .orders(createdOrders)
@@ -714,26 +734,33 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId) {
+    public CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId, List<UUID> cartIds) {
         Address address = addressRepository.findByIdAndUserId(addressId, userId)
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
 
-        List<Cart> carts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
-        if (carts.isEmpty()) {
+        List<Cart> allCarts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
+        if (allCarts.isEmpty()) {
             throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
         }
+
+        // Optional filtering: summarise only the requested carts.
+        // cartIds null/empty → summarise all carts (old behaviour).
+        List<Cart> cartsToSummarise = (cartIds != null && !cartIds.isEmpty())
+                ? allCarts.stream().filter(c -> cartIds.contains(c.getId())).collect(Collectors.toList())
+                : allCarts;
 
         List<CartCheckoutBreakdownDto> breakdowns = new ArrayList<>();
         int totalItemCount = 0;
         BigDecimal grandTotal = BigDecimal.ZERO;
-        int index = 1;
 
-        for (Cart cart : carts) {
+        for (Cart cart : cartsToSummarise) {
             if (cart.getItems() == null || cart.getItems().isEmpty()) {
-                index++;
                 continue;
             }
+
+            // Use global index so label stays "Cart 1", "Cart 2", ... regardless of subset.
+            int globalIndex = allCarts.indexOf(cart) + 1;
 
             BigDecimal subtotal = BigDecimal.ZERO;
             int itemCount = cart.getItems().size();
@@ -753,7 +780,7 @@ public class OrderServiceImpl implements OrderService {
 
             breakdowns.add(CartCheckoutBreakdownDto.builder()
                     .cartId(cart.getId())
-                    .cartLabel("Cart " + index)
+                    .cartLabel("Cart " + globalIndex)
                     .itemCount(itemCount)
                     .subtotal(subtotal)
                     .deliveryFee(deliveryFee)
@@ -765,7 +792,6 @@ public class OrderServiceImpl implements OrderService {
 
             totalItemCount += itemCount;
             grandTotal = grandTotal.add(total);
-            index++;
         }
 
         return CheckoutSummaryDto.builder()

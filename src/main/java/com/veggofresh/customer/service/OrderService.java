@@ -61,6 +61,10 @@ public interface OrderService {
 
     InvoiceDto getInvoice(UUID userId, UUID orderId);
 
-    /** PHASE 2 — per-cart breakdown + grand total across all open carts. */
-    CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId);
+    /**
+     * PHASE 2 (updated) — per-cart breakdown for the carts the customer intends to check out.
+     * cartIds null or empty → summarise all open carts.
+     * cartIds non-empty   → only those carts; others are excluded from the preview.
+     */
+    CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId, List<UUID> cartIds);
 }
