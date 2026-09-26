@@ -3,6 +3,7 @@ package com.veggofresh.customer.controller;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.common.PageResponse;
 import com.veggofresh.vendor.dto.CategoryDto;
+import com.veggofresh.vendor.dto.CategoryTreeDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
 import com.veggofresh.vendor.dto.SubcategoryDto;
@@ -63,6 +64,35 @@ public class CustomerBrowseController {
             @RequestParam(defaultValue = "20") int size) {
         Page<SubcategoryDto> subcategories = productCatalogService.browseSubcategories(categoryId, search, PageRequest.of(page, size));
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(subcategories), "Subcategories retrieved successfully"));
+    }
+
+    /**
+     * NEW -- one category, its subcategories, and each subcategory's eligible
+     * (radius-filtered, listed) products, all nested in one response. Category/
+     * subcategory data itself is not radius-filtered, matching /categories and
+     * /categories/{categoryId}/subcategories above; only the nested products are.
+     */
+    @GetMapping("/categories/{categoryId}/tree")
+    public ResponseEntity<ApiResponse<CategoryTreeDto>> getCategoryTree(
+            @PathVariable UUID categoryId,
+            @RequestParam double latitude,
+            @RequestParam double longitude) {
+        CategoryTreeDto tree = productCatalogService.getCategoryTree(categoryId, latitude, longitude);
+        return ResponseEntity.ok(ApiResponse.success(tree, "Category tree retrieved successfully"));
+    }
+
+    /**
+     * NEW -- the entire active catalog, every category with every subcategory with
+     * every eligible product nested inside, in one response. Testing/tooling use,
+     * not the production app -- cost scales with total catalog size since radius-
+     * eligibility runs per product across every subcategory in a single call.
+     */
+    @GetMapping("/categories/tree")
+    public ResponseEntity<ApiResponse<List<CategoryTreeDto>>> getFullCatalogTree(
+            @RequestParam double latitude,
+            @RequestParam double longitude) {
+        List<CategoryTreeDto> tree = productCatalogService.getFullCatalogTree(latitude, longitude);
+        return ResponseEntity.ok(ApiResponse.success(tree, "Full catalog tree retrieved successfully"));
     }
 
     @GetMapping("/products")

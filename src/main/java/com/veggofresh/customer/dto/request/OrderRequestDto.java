@@ -21,8 +21,8 @@ public class OrderRequestDto {
     @NotNull(message = "Address ID is required")
     private UUID addressId;
 
-    /** UUID reference only — actual PaymentMethod entity lives in Payment module */
-    private UUID paymentMethodId;
+    /** Payment method label — e.g. "COD", "UPI", "ONLINE", "WALLET" */
+    private String paymentMethodId;
 
     /** Optional — delivery slot selected at checkout */
     private UUID deliverySlotId;

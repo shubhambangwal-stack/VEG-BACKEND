@@ -25,6 +25,8 @@ import java.util.List;
  * text data paired with these documents (unlike Delivery's license number /
  * vehicle details, which needed merging with their photo uploads).
  */
+import com.veggofresh.vendor.dto.response.VendorApplicationDetailsResponseDto;
+
 @RestController
 @RequestMapping("/api/vendor/documents")
 @RequiredArgsConstructor
@@ -34,9 +36,9 @@ public class VendorDocumentController {
     private final VendorDocumentService vendorDocumentService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<VendorDocumentResponseDto>>> getDocuments() {
-        var documents = vendorDocumentService.getDocuments(SecurityUtils.getCurrentUserId());
-        return ResponseEntity.ok(ApiResponse.success(documents, "Documents retrieved successfully"));
+    public ResponseEntity<ApiResponse<VendorApplicationDetailsResponseDto>> getDocuments() {
+        var details = vendorDocumentService.getDocuments(SecurityUtils.getCurrentUserId());
+        return ResponseEntity.ok(ApiResponse.success(details, "Application details retrieved successfully"));
     }
 
     @PostMapping("/{type}")

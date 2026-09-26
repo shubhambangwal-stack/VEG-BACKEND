@@ -3,6 +3,7 @@ package com.veggofresh.auth.controller;
 import com.veggofresh.auth.dto.request.LogoutRequestDto;
 import com.veggofresh.auth.dto.request.OtpRequestDto;
 import com.veggofresh.auth.dto.request.OtpVerifyDto;
+import com.veggofresh.auth.dto.request.FirebaseOtpVerifyDto;
 import com.veggofresh.auth.dto.request.RefreshTokenRequestDto;
 import com.veggofresh.auth.dto.response.AuthTokenResponseDto;
 import com.veggofresh.auth.dto.response.UserProfileResponseDto;
@@ -33,6 +34,12 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthTokenResponseDto>> verifyOtp(@Valid @RequestBody OtpVerifyDto request) {
         AuthTokenResponseDto tokens = authService.verifyOtp(request);
         return ResponseEntity.ok(ApiResponse.success(tokens, "OTP verified successfully"));
+    }
+
+    @PostMapping("/otp/verify/firebase")
+    public ResponseEntity<ApiResponse<AuthTokenResponseDto>> verifyFirebaseOtp(@Valid @RequestBody FirebaseOtpVerifyDto request) {
+        AuthTokenResponseDto tokens = authService.verifyFirebaseOtp(request);
+        return ResponseEntity.ok(ApiResponse.success(tokens, "Firebase OTP verified successfully"));
     }
 
     @PostMapping("/refresh")

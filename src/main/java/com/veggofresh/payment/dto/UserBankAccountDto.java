@@ -23,7 +23,6 @@ public class UserBankAccountDto {
     private String ifscCode;
     private String bankName;
     private String upiId;
-    private boolean isVerified;
     private Instant createdAt;
     private Instant updatedAt;
 }

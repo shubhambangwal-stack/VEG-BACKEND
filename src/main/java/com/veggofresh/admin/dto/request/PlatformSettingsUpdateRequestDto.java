@@ -29,10 +29,13 @@ public class PlatformSettingsUpdateRequestDto {
     @DecimalMin(value = "0.5", message = "deliveryRadiusKm must be at least 0.5km")
     private Double deliveryRadiusKm;
 
-    @NotNull(message = "platformCommissionPercent is required")
-    @DecimalMin(value = "0.0", message = "platformCommissionPercent cannot be negative")
-    @DecimalMax(value = "100.0", message = "platformCommissionPercent cannot exceed 100")
-    private BigDecimal platformCommissionPercent;
+    @NotNull(message = "platformFeeAmount is required")
+    @DecimalMin(value = "0.0", message = "platformFeeAmount cannot be negative")
+    private BigDecimal platformFeeAmount;
+
+    @NotNull(message = "deliveryFeeAmount is required")
+    @DecimalMin(value = "0.0", message = "deliveryFeeAmount cannot be negative")
+    private BigDecimal deliveryFeeAmount;
 
     @NotNull(message = "vendorAcceptTimeoutSeconds is required")
     @Min(value = 30, message = "vendorAcceptTimeoutSeconds must be at least 30 seconds")
@@ -49,4 +52,13 @@ public class PlatformSettingsUpdateRequestDto {
     @NotNull(message = "rebroadcastMaxElapsedMinutes is required")
     @Min(value = 1, message = "rebroadcastMaxElapsedMinutes must be at least 1")
     private Integer rebroadcastMaxElapsedMinutes;
+
+    /**
+     * Deliberately NO @Max here, unlike every other field above -- confirmed with the
+     * team this one has no hard ceiling; whatever Admin sets is used as-is. Only a
+     * floor is enforced (must be positive), as plain input validation, not a business rule.
+     */
+    @NotNull(message = "otpExpiryMinutes is required")
+    @Min(value = 1, message = "otpExpiryMinutes must be at least 1 minute")
+    private Integer otpExpiryMinutes;
 }

@@ -95,8 +95,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // ── CORS — disabled so web server (Nginx/Apache) manages CORS ─────────
-                .cors(AbstractHttpConfigurer::disable)
+                // ── CORS — enabled to allow Admin Panel & Web Clients (e.g., https://veg-go.vercel.app) ──
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // ── CSRF — disabled for stateless JWT APIs ────────────────────────────
                 .csrf(AbstractHttpConfigurer::disable)
@@ -117,6 +117,36 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * CORS Configuration Source bean allowing requests from frontend origins
+     * including https://veg-go.vercel.app (Admin Panel), Vercel previews, and localhost.
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        
+        configuration.setAllowedOriginPatterns(List.of(
+                "https://veg-go.vercel.app",
+                "https://*.vercel.app",
+                "http://localhost:*",
+                "http://veggofresh.in",
+                "https://veggofresh.in",
+                "http://*.veggofresh.in",
+                "https://*.veggofresh.in",
+                "*"
+        ));
+        
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "X-Device-Id", "X-Role", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
+        configuration.setExposedHeaders(List.of("Authorization", "Content-Type", "X-Total-Count", "X-Device-Id"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     /**

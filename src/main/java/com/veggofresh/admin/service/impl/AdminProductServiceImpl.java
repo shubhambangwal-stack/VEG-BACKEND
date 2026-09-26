@@ -27,12 +27,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional
 public class AdminProductServiceImpl implements AdminProductService {
 
     private final CatalogProductRepository productRepository;
@@ -42,7 +43,6 @@ public class AdminProductServiceImpl implements AdminProductService {
     private final CloudinaryService cloudinaryService;
 
     @Override
-    @Transactional
     public ProductResponseDto createProduct(ProductCreateRequestDto request) {
         CatalogCategory category = getCategory(request.getCategoryId());
         CatalogSubcategory subcategory = getSubcategory(request.getSubcategoryId());
@@ -81,7 +81,6 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
-    @Transactional
     public ProductResponseDto updateProduct(UUID id, ProductRequestDto request) {
         CatalogProduct product = getEntity(id);
         CatalogCategory category = getCategory(request.getCategoryId());
@@ -108,16 +107,19 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public ProductResponseDto getProductById(UUID id) {
         return toDto(getEntity(id));
     }
 
     @Override
-    public java.util.Optional<ProductResponseDto> findProductById(UUID id) {
+    @Transactional(readOnly = true)
+    public Optional<ProductResponseDto> findProductById(UUID id) {
         return productRepository.findById(id).map(this::toDto);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ProductResponseDto> searchProducts(String search, UUID categoryId, UUID subcategoryId, Pageable pageable) {
         String normalizedSearch = (search != null && !search.isBlank()) ? search.trim() : null;
         return productRepository.search(normalizedSearch, categoryId, subcategoryId, pageable)
@@ -125,7 +127,6 @@ public class AdminProductServiceImpl implements AdminProductService {
     }
 
     @Override
-    @Transactional
     public ProductResponseDto setActive(UUID id, boolean active) {
         CatalogProduct product = getEntity(id);
         product.setActive(active);

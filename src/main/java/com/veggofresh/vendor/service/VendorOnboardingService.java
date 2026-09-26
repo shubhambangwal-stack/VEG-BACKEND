@@ -1,5 +1,6 @@
 package com.veggofresh.vendor.service;
 
+import com.veggofresh.vendor.dto.request.VendorBankDetailsRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBasicInfoRequestDto;
 import com.veggofresh.vendor.dto.request.VendorBusinessLocationRequestDto;
 import com.veggofresh.vendor.dto.response.VendorOnboardingChecklistResponseDto;
@@ -14,7 +15,10 @@ public interface VendorOnboardingService {
     VendorOnboardingStatusResponseDto submitBasicInfo(UUID ownerUserId, VendorBasicInfoRequestDto request);
     VendorOnboardingStatusResponseDto submitBusinessLocation(UUID ownerUserId, VendorBusinessLocationRequestDto request);
 
-    /** Requires all 3 documents already uploaded via VendorDocumentService. Sets kycStatus PENDING. */
+    /** Step 3: Bank details. Requires business-location done first. */
+    VendorOnboardingStatusResponseDto submitBankDetails(UUID ownerUserId, VendorBankDetailsRequestDto request);
+
+    /** Requires bank details + all 3 documents already uploaded via VendorDocumentService. Sets kycStatus PENDING. */
     VendorOnboardingStatusResponseDto submitApplication(UUID ownerUserId);
 
     /** Post-approval "getting started" checklist -- only meaningful once kycStatus is APPROVED. */

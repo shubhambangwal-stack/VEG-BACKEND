@@ -12,6 +12,8 @@ import com.veggofresh.customer.dto.response.OrderTrackingResponseDto;
 import com.veggofresh.customer.dto.response.RatingResponseDto;
 import com.veggofresh.customer.service.DeliverySlotService;
 import com.veggofresh.customer.service.OrderService;
+ import com.veggofresh.payment.dto.VerifyPaymentRequestDto;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.platform.common.ApiResponse;
 import com.veggofresh.platform.common.PageResponse;
 import com.veggofresh.platform.security.SecurityUtils;
@@ -19,6 +21,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -38,6 +42,23 @@ public class CustomerOrderController {
 
     private final OrderService orderService;
     private final DeliverySlotService deliverySlotService;
+    private final PaymentService paymentService;
+
+    /**
+     * Alias for {@code POST /api/payment/orders/verify}.
+     * The Razorpay mobile SDK callback hits this URL; it simply delegates to
+     * PaymentService so no separate controller is needed on the app side.
+     */
+    @PostMapping("/verify-payment")
+    public ResponseEntity<ApiResponse<String>> verifyPayment(
+            @Valid @RequestBody VerifyPaymentRequestDto request) {
+        paymentService.verifyPayment(
+                request.getRazorpayOrderId(),
+                request.getRazorpayPaymentId(),
+                request.getRazorpaySignature()
+        );
+        return ResponseEntity.ok(ApiResponse.success("Payment verified and authorized successfully", "OK"));
+    }
 
     /**
      * PHASE 2 — BREAKING CHANGE: response is now {@link CheckoutResultDto}
@@ -60,11 +81,12 @@ public class CustomerOrderController {
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
+        Sort newestFirst = Sort.by(Sort.Direction.DESC, "createdAt");
         Page<OrderResponseDto> history;
         if (status != null && !status.trim().isEmpty()) {
-            history = orderService.getOrderHistoryByStatusGroup(SecurityUtils.getCurrentUserId(), status, PageRequest.of(page, size));
+            history = orderService.getOrderHistoryByStatusGroup(SecurityUtils.getCurrentUserId(), status, PageRequest.of(page, size, newestFirst));
         } else {
-            history = orderService.getOrderHistory(SecurityUtils.getCurrentUserId(), PageRequest.of(page, size));
+            history = orderService.getOrderHistory(SecurityUtils.getCurrentUserId(), PageRequest.of(page, size, newestFirst));
         }
         return ResponseEntity.ok(ApiResponse.success(PageResponse.of(history), "Order history retrieved successfully"));
     }
@@ -81,6 +103,21 @@ public class CustomerOrderController {
             @PathVariable UUID id) {
         OrderTrackingResponseDto tracking = orderService.trackOrder(SecurityUtils.getCurrentUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(tracking, "Order tracking information retrieved successfully"));
+    }
+
+    /**
+     * NEW -- standalone way to fetch just the drop OTP, separate from the full track
+     * response above (which also includes it as a field; both read the same value).
+     * Empty string until the order has been picked up -- that's when Delivery pushes
+     * the real code in, not before.
+     */
+    @GetMapping("/{id}/drop-otp")
+    public ResponseEntity<ApiResponse<Map<String, String>>> getDropOtp(@PathVariable UUID id) {
+        String dropOtp = orderService.getDropOtp(SecurityUtils.getCurrentUserId(), id);
+        String message = dropOtp == null
+                ? "Drop OTP not yet available -- it appears once your order has been picked up"
+                : "Drop OTP retrieved successfully";
+        return ResponseEntity.ok(ApiResponse.success(Map.of("dropOtp", dropOtp == null ? "" : dropOtp), message));
     }
 
     @PostMapping("/{id}/rating")

@@ -4,6 +4,7 @@ package com.veggofresh.vendor.dto.response;
 public enum VendorOnboardingNextAction {
     BASIC_INFO,
     BUSINESS_LOCATION,
+    BANK_DETAILS,
     VERIFICATION_DOCUMENTS,
     UNDER_REVIEW,
     REJECTED,

@@ -20,7 +20,11 @@ public interface PlatformSettingsService {
 
     double getDeliveryRadiusKm();
 
-    BigDecimal getPlatformCommissionPercent();
+    /** Flat rupee platform fee per order (e.g. ₹5). Configurable by Admin. */
+    BigDecimal getPlatformFeeAmount();
+
+    /** Flat rupee delivery fee per order (e.g. ₹20). Configurable by Admin. */
+    BigDecimal getDeliveryFeeAmount();
 
     int getVendorAcceptTimeoutSeconds();
 
@@ -29,4 +33,7 @@ public interface PlatformSettingsService {
     int getRebroadcastMaxRounds();
 
     int getRebroadcastMaxElapsedMinutes();
+
+    /** Used by Delivery when issuing/regenerating pickup and drop OTPs. No hard ceiling -- whatever Admin sets is used as-is. */
+    int getOtpExpiryMinutes();
 }

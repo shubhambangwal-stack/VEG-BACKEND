@@ -3,6 +3,7 @@ package com.veggofresh.vendor.service.impl;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.platform.storage.CloudinaryService;
 import com.veggofresh.platform.storage.CloudinaryUploadResult;
+import com.veggofresh.vendor.dto.response.VendorApplicationDetailsResponseDto;
 import com.veggofresh.vendor.dto.response.VendorDocumentResponseDto;
 import com.veggofresh.vendor.entity.Shop;
 import com.veggofresh.vendor.entity.VendorDocument;
@@ -31,7 +32,7 @@ public class VendorDocumentServiceImpl implements VendorDocumentService {
     private final CloudinaryService cloudinaryService;
 
     @Override
-    public List<VendorDocumentResponseDto> getDocuments(UUID ownerUserId) {
+    public VendorApplicationDetailsResponseDto getDocuments(UUID ownerUserId) {
         Shop shop = requireShop(ownerUserId);
         List<VendorDocument> existing = documentRepository.findByShopId(shop.getId());
 
@@ -46,7 +47,31 @@ public class VendorDocumentServiceImpl implements VendorDocumentService {
             }
         }
 
-        return existing.stream().map(this::mapToDto).collect(Collectors.toList());
+        List<VendorDocumentResponseDto> documents = existing.stream().map(this::mapToDto).collect(Collectors.toList());
+        
+        com.veggofresh.payment.dto.UserBankAccountDto bankDetails = null;
+        if (shop.getBankName() != null || shop.getAccountNumber() != null) {
+            bankDetails = com.veggofresh.payment.dto.UserBankAccountDto.builder()
+                    .bankName(shop.getBankName())
+                    .accountHolderName(shop.getAccountHolderName())
+                    .accountNumber(shop.getAccountNumber())
+                    .ifscCode(shop.getIfscCode())
+                    .build();
+        }
+
+        return VendorApplicationDetailsResponseDto.builder()
+                .documents(documents)
+                .bankDetails(bankDetails)
+                .fullName(shop.getFullName())
+                .email(shop.getEmail())
+                .businessPhone(shop.getBusinessPhone())
+                .businessType(shop.getBusinessType())
+                .streetAddress(shop.getStreetAddress())
+                .city(shop.getCity())
+                .state(shop.getState())
+                .zipCode(shop.getZipCode())
+                .kycStatus(shop.getKycStatus())
+                .build();
     }
 
     @Override

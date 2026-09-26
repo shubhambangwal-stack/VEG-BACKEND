@@ -112,6 +112,16 @@ public class Order extends BaseEntity {
     @Column(name = "delivery_location_note", length = 100)
     private String deliveryLocationNote;
 
+    /**
+     * Real drop-off OTP, pushed here by Delivery ({@code CustomerOrderService.setDropOtpAvailable})
+     * the moment it's generated -- initial issuance right when the delivery partner
+     * marks "picked up", or later if regenerated -- null before that. Replaces the old
+     * fake {@code CustomerOrderService.getDeliveryOtp()} hashCode-derived stand-in,
+     * which is now dead code left in place for compatibility.
+     */
+    @Column(name = "drop_otp", length = 10)
+    private String dropOtp;
+
     // ── Promo Code ───────────────────────────────────────────
     @Column(name = "promo_code", length = 50)
     private String promoCode;

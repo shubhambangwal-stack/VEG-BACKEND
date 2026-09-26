@@ -37,11 +37,17 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      */
     @Query("SELECT DISTINCT o FROM Order o JOIN o.candidateVendorIds v " +
            "WHERE v = :shopId AND o.status = :placedStatus AND o.acceptedShopId IS NULL " +
-           "AND :shopId NOT MEMBER OF o.rejectedShopIds")
+           "AND :shopId NOT MEMBER OF o.rejectedShopIds " +
+           "ORDER BY o.createdAt DESC")
     List<Order> findRequestsForShop(@Param("shopId") UUID shopId, @Param("placedStatus") OrderStatus placedStatus);
 
-    /** A shop's real order history — only orders THIS shop actually won the accept race for. */
-    List<Order> findByAcceptedShopId(UUID shopId);
+    /**
+     * A shop's real order history — only orders THIS shop actually won the accept
+     * race for. Newest first (renamed from findByAcceptedShopId, which had no
+     * defined order -- vendors were seeing an unpredictable order, effectively
+     * whatever the DB happened to return).
+     */
+    List<Order> findByAcceptedShopIdOrderByCreatedAtDesc(UUID shopId);
 
     /**
      * NEW THIS ROUND -- real atomic accept for the vendor-accept race, now recording

@@ -1,12 +1,17 @@
 package com.veggofresh.notification.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.veggofresh.auth.service.UserLookupService;
 import com.veggofresh.notification.dto.NotificationDto;
 import com.veggofresh.notification.entity.Notification;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
+import com.veggofresh.notification.entity.UserDeviceToken;
 import com.veggofresh.notification.repository.NotificationRepository;
+import com.veggofresh.notification.repository.UserDeviceTokenRepository;
 import com.veggofresh.notification.service.NotificationService;
+import com.veggofresh.notification.service.fcm.FcmService;
 import com.veggofresh.platform.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,22 +22,20 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
- * Durable-first notification engine.
+ * Durable-first notification engine with real-time STOMP & FCM Push Notification delivery.
  *
  * <p>Order of operations is non-negotiable: the notification row is saved to
  * {@code notifications} BEFORE any delivery attempt, so a recipient who is
  * offline (or whose socket died) still has the notification when they hydrate
- * via {@code GET /api/notifications}. The STOMP push is a fast-path side
- * effect, not the source of truth.
- *
- * <p>Because {@link #send} is normally invoked from inside a caller-owned
- * transaction, the DB write shares that transaction (no {@code REQUIRES_NEW},
- * no message queue) — acceptable for this stage and keeps everything in sync
- * with the business action that produced the event.
+ * via {@code GET /api/notifications}. The STOMP & FCM pushes are fast-path side
+ * effects, not the source of truth.
  */
 @Slf4j
 @Service
@@ -48,8 +51,11 @@ public class NotificationServiceImpl implements NotificationService {
             NotificationRecipientRole.ADMIN.name());
 
     private final NotificationRepository notificationRepository;
+    private final UserDeviceTokenRepository userDeviceTokenRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final UserLookupService userLookupService;
+    private final FcmService fcmService;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -70,14 +76,11 @@ public class NotificationServiceImpl implements NotificationService {
         notification.setRead(false);
 
         // 1) Durable write first — nothing is lost if delivery fails.
-        // saveAndFlush guarantees the INSERT is physically issued BEFORE the
-        // STOMP push below, honouring the persist-then-deliver contract even
-        // though this usually runs inside a caller-owned transaction.
         Notification saved = notificationRepository.saveAndFlush(notification);
 
         NotificationDto dto = NotificationDto.from(saved);
 
-        // 2) Fast-path push to the recipient's private queue if connected.
+        // 2) Fast-path push: STOMP websocket + FCM Push Notifications
         push(recipientId, dto);
         return dto;
     }
@@ -138,17 +141,64 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     private void push(UUID recipientId, NotificationDto dto) {
+        // A) STOMP WebSocket Push
         try {
-            // user destination → `/user/queue/notifications` on the client.
-            // The user name must match StompPrincipal.name (= user UUID string).
             messagingTemplate.convertAndSendToUser(recipientId.toString(), QUEUE_NOTIFICATIONS, dto);
             log.debug("Pushed notification {} to /user/queue/notifications for user {}", dto.getId(), recipientId);
         } catch (Exception e) {
-            // Delivery failure must never fail the business transaction that
-            // produced the notification — the row is already durable.
             log.warn("WebSocket push failed for user {} (notification {} remains persisted): {}",
                     recipientId, dto.getId(), e.getMessage());
         }
+
+        // B) FCM Push Notification (Mobile/Web Background Push)
+        try {
+            if (fcmService.isInitialized()) {
+                List<UserDeviceToken> deviceTokens = userDeviceTokenRepository.findByUserId(recipientId);
+                if (!deviceTokens.isEmpty()) {
+                    List<String> tokens = deviceTokens.stream()
+                            .map(UserDeviceToken::getFcmToken)
+                            .collect(Collectors.toList());
+
+                    Map<String, String> fcmDataMap = buildFcmDataMap(dto);
+
+                    List<String> invalidTokens = fcmService.sendToMultipleTokens(
+                            tokens, dto.getTitle(), dto.getBody(), fcmDataMap);
+
+                    // Purge stale/unregistered device tokens
+                    if (invalidTokens != null && !invalidTokens.isEmpty()) {
+                        invalidTokens.forEach(staleToken -> {
+                            userDeviceTokenRepository.deleteByFcmToken(staleToken);
+                            log.info("Purged unregistered FCM device token: {}", staleToken);
+                        });
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("FCM push failed for user {} (notification {} remains persisted): {}",
+                    recipientId, dto.getId(), e.getMessage());
+        }
+    }
+
+    private Map<String, String> buildFcmDataMap(NotificationDto dto) {
+        Map<String, String> map = new HashMap<>();
+        map.put("notificationId", dto.getId() != null ? dto.getId().toString() : "");
+        map.put("type", dto.getType() != null ? dto.getType().name() : "");
+        map.put("recipientRole", dto.getRecipientRole() != null ? dto.getRecipientRole().name() : "");
+
+        if (dto.getData() != null && !dto.getData().isBlank()) {
+            try {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        dto.getData(), new TypeReference<Map<String, Object>>() {});
+                jsonMap.forEach((k, v) -> {
+                    if (k != null && v != null) {
+                        map.put(k, v.toString());
+                    }
+                });
+            } catch (Exception e) {
+                map.put("rawJson", dto.getData());
+            }
+        }
+        return map;
     }
 
     private NotificationRecipientRole roleToEnum(String role) {

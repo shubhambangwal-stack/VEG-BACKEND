@@ -23,14 +23,19 @@ import java.util.UUID;
 
 /**
  * Admin-only payment management endpoints:
- * - GET  /api/admin/payment/payouts/pending          -- payout request queue
- * - POST /api/admin/payment/payouts/{id}/process     -- approve or reject
+ * - GET  /api/admin/payment/payouts/pending         -- payout request queue
+ * - POST /api/admin/payment/payouts/{id}/process    -- approve or reject payout
+ *
+ * NOTE: Bank account verification endpoints have been REMOVED.
+ * KYC approval (via AdminDeliveryKycController / AdminVendorKycController) is
+ * the single gate for withdrawal eligibility. No separate bank account
+ * approval step exists anymore.
  */
 @RestController
 @RequestMapping("/api/admin/payment")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
-public class    PaymentAdminController {
+public class PaymentAdminController {
 
     private final PayoutService payoutService;
 

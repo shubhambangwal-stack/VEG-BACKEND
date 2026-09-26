@@ -3,7 +3,6 @@ package com.veggofresh.delivery.service.impl;
 import com.veggofresh.admin.service.PlatformSettingsService;
 import com.veggofresh.auth.dto.UserSummaryDto;
 import com.veggofresh.auth.service.UserLookupService;
-import com.veggofresh.customer.dto.response.OrderSettlementDto;
 import com.veggofresh.customer.service.CustomerOrderService;
 import com.veggofresh.delivery.dto.response.DeliveryAssignmentResponseDto;
 import com.veggofresh.delivery.dto.response.ProofOfDeliveryResponseDto;
@@ -23,11 +22,14 @@ import com.veggofresh.delivery.repository.DeliveryPartnerProfileRepository;
 import com.veggofresh.delivery.repository.DeliveryProofOfDeliveryRepository;
 import com.veggofresh.delivery.repository.EarningRecordRepository;
 import com.veggofresh.delivery.service.DeliveryAssignmentService;
-import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.platform.exception.BusinessException;
+import com.veggofresh.customer.entity.Order;
+import com.veggofresh.customer.repository.OrderRepository;
+import com.veggofresh.payment.service.PaymentService;
+import com.veggofresh.vendor.dto.ShopSummaryDto;
+import com.veggofresh.vendor.service.ShopLookupService;
 import com.veggofresh.platform.storage.CloudinaryService;
 import com.veggofresh.platform.storage.CloudinaryUploadResult;
-import com.veggofresh.vendor.service.ShopLookupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -40,7 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -50,20 +51,25 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * REBUILT THIS ROUND -- real atomic accept, real radius-enforced broadcast/accept,
- * real bounded re-broadcast loop reading Admin's configured settings, pickup-OTP,
- * cancel-after-accept, and the assignDeliveryAgent/cancelOrderSystemInitiated wiring.
- * Full detail on every change in NOTES_DELIVERY.md -- this class's javadoc only flags
+ * REBUILT THIS ROUND -- real atomic accept, real radius-enforced
+ * broadcast/accept,
+ * real bounded re-broadcast loop reading Admin's configured settings,
+ * pickup-OTP,
+ * cancel-after-accept, and the assignDeliveryAgent/cancelOrderSystemInitiated
+ * wiring.
+ * Full detail on every change in NOTES_DELIVERY.md -- this class's javadoc only
+ * flags
  * the highlights inline near each change.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class
-DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
+public class DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
-    private static final int OTP_EXPIRY_MINUTES = 15;
+    // OTP expiry is now Admin-configurable (PlatformSettings.otpExpiryMinutes, no
+    // ceiling) -- see issuePickupOtp()/issueDropOtp(). Previously a hardcoded
+    // OTP_EXPIRY_MINUTES = 15 constant here.
     private static final int MAX_OTP_ATTEMPTS = 5;
     private static final BigDecimal BASE_PAY = BigDecimal.valueOf(20);
     private static final BigDecimal RATE_PER_KM = BigDecimal.valueOf(8);
@@ -85,12 +91,14 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     private final UserLookupService userLookupService;
     private final CloudinaryService cloudinaryService;
     private final PlatformSettingsService platformSettingsService;
+    private final OrderRepository orderRepository;
     private final PaymentService paymentService;
     private final ShopLookupService shopLookupService;
 
     @Override
     @Transactional(readOnly = true)
-    public List<DeliveryAssignmentResponseDto> getNearbyAssignments(UUID deliveryPartnerUserId, double lat, double lng, double radiusKm) {
+    public List<DeliveryAssignmentResponseDto> getNearbyAssignments(UUID deliveryPartnerUserId, double lat, double lng,
+            double radiusKm) {
         // NEW: clamped to Admin's configured radius -- a partner can narrow their own
         // view (e.g. "just show me within 2km") but can never see further than the real
         // eligibility boundary, closing the "discovery filter isn't an enforcement
@@ -120,7 +128,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         // calling partner's own distance from the pickup point at all.
         if (partner.getCurrentLatitude() == null || partner.getCurrentLongitude() == null) {
             throw new BusinessException("DELIVERY_LOCATION_UNKNOWN",
-                    "Your current location isn't set -- go online again to refresh it before accepting", HttpStatus.BAD_REQUEST);
+                    "Your current location isn't set -- go online again to refresh it before accepting",
+                    HttpStatus.BAD_REQUEST);
         }
         double distanceToPickup = haversineKm(partner.getCurrentLatitude(), partner.getCurrentLongitude(),
                 assignment.getPickupLatitude(), assignment.getPickupLongitude());
@@ -130,7 +139,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
                     "You are outside the delivery radius for this order", HttpStatus.BAD_REQUEST);
         }
 
-        // NEW: real atomic accept -- a single conditional UPDATE, not a read-then-write.
+        // NEW: real atomic accept -- a single conditional UPDATE, not a
+        // read-then-write.
         // 0 rows affected means someone else already claimed it between our read above
         // and this write; that's reported cleanly, not as an unhandled 500.
         int claimed = assignmentRepository.atomicClaim(assignment.getId(), deliveryPartnerUserId,
@@ -147,18 +157,24 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
         // FIXED THIS ROUND: previously called customerOrderService.acceptOrder(orderId)
         // here, which is semantically wrong -- that's the VENDOR's action on the ORDER
-        // (PLACED -> CONFIRMED), not the delivery partner's action on the ASSIGNMENT. By
+        // (PLACED -> CONFIRMED), not the delivery partner's action on the ASSIGNMENT.
+        // By
         // the time delivery is even involved the order is already well past PLACED, so
         // that call would throw INVALID_ORDER_STATE_TRANSITION now that a real
         // ready-for-pickup trigger exists upstream. The correct call here is
-        // assignDeliveryAgent -- exists on CustomerOrderService, was never called before.
+        // assignDeliveryAgent -- exists on CustomerOrderService, was never called
+        // before.
         String agentPhone = userLookupService.findById(deliveryPartnerUserId)
                 .map(UserSummaryDto::getPhone).orElse(null);
         customerOrderService.assignDeliveryAgent(orderId, partner.getFullName(), agentPhone,
                 null /* no profile photo field exists on DeliveryPartnerProfile yet */,
                 null /* no real ETA calculation exists yet -- see NOTES_DELIVERY.md */);
 
-        return mapToLightDto(refreshed);
+        // CHANGED THIS ROUND: previously returned mapToLightDto() here, even
+        // though the partner now legitimately owns this assignment and should
+        // immediately see shop phone, customer name/phone, items, and invoice
+        // total without a second call.
+        return mapToFullDto(refreshed);
     }
 
     @Override
@@ -180,10 +196,12 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         DeliveryAssignment assignment = assignmentRepository
                 .findByOrderIdAndStatusIn(orderId, CANCELLABLE_STATUSES)
                 .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_CANCELLABLE",
-                        "No cancellable assignment (must be ACCEPTED or ARRIVED_AT_STORE) for this order", HttpStatus.BAD_REQUEST));
+                        "No cancellable assignment (must be ACCEPTED or ARRIVED_AT_STORE) for this order",
+                        HttpStatus.BAD_REQUEST));
 
         if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
-            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
         }
 
         assignment.setStatus(DeliveryAssignmentStatus.CANCELLED);
@@ -198,54 +216,61 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
     @Override
     public DeliveryAssignmentResponseDto markArrivedAtStore(UUID deliveryPartnerUserId, UUID orderId) {
-        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId, DeliveryAssignmentStatus.ACCEPTED);
+        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId,
+                DeliveryAssignmentStatus.ACCEPTED);
 
         assignment.setStatus(DeliveryAssignmentStatus.ARRIVED_AT_STORE);
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.ARRIVED_AT_STORE);
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
     public DeliveryAssignmentResponseDto markPickedUp(UUID deliveryPartnerUserId, UUID orderId) {
-        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId, DeliveryAssignmentStatus.ARRIVED_AT_STORE);
+        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId,
+                DeliveryAssignmentStatus.ARRIVED_AT_STORE);
 
         // NEW REQUIREMENT: pickup OTP must be verified first -- mirrors the existing
         // drop-OTP-required-before-completeDelivery() pattern exactly.
         DeliveryOtp pickupOtp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.PICKUP)
-                .orElseThrow(() -> new BusinessException("DELIVERY_PICKUP_OTP_NOT_FOUND", "No pickup OTP issued for this assignment", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_PICKUP_OTP_NOT_FOUND",
+                        "No pickup OTP issued for this assignment", HttpStatus.NOT_FOUND));
         if (!pickupOtp.isVerified()) {
-            throw new BusinessException("DELIVERY_PICKUP_OTP_NOT_VERIFIED", "Pickup OTP must be verified before marking picked up", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("DELIVERY_PICKUP_OTP_NOT_VERIFIED",
+                    "Pickup OTP must be verified before marking picked up", HttpStatus.BAD_REQUEST);
         }
 
         assignment.setStatus(DeliveryAssignmentStatus.PICKED_UP);
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.PICKED_UP);
 
-        issueDropOtp(assignment);
+        issueDropOtp(assignment, orderId);
         customerOrderService.updateOrderStatus(orderId, "OUT_FOR_DELIVERY");
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
     public DeliveryAssignmentResponseDto markArrivedAtDrop(UUID deliveryPartnerUserId, UUID orderId) {
-        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId, DeliveryAssignmentStatus.PICKED_UP);
+        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId,
+                DeliveryAssignmentStatus.PICKED_UP);
 
         assignment.setStatus(DeliveryAssignmentStatus.ARRIVED_AT_DROP);
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.ARRIVED_AT_DROP);
 
-        return mapToLightDto(assignment);
+        return mapToFullDto(assignment);
     }
 
     @Override
     public void verifyPickupOtp(UUID deliveryPartnerUserId, UUID orderId, String otp) {
-        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId, DeliveryAssignmentStatus.ARRIVED_AT_STORE);
+        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId,
+                DeliveryAssignmentStatus.ARRIVED_AT_STORE);
 
         DeliveryOtp pickupOtp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.PICKUP)
-                .orElseThrow(() -> new BusinessException("DELIVERY_PICKUP_OTP_NOT_FOUND", "No pickup OTP issued for this assignment", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_PICKUP_OTP_NOT_FOUND",
+                        "No pickup OTP issued for this assignment", HttpStatus.NOT_FOUND));
 
         verifyOtpInternal(pickupOtp, otp, "DELIVERY_PICKUP_OTP");
     }
@@ -253,33 +278,42 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     @Override
     public void verifyDeliveryOtp(UUID deliveryPartnerUserId, UUID orderId, String otp) {
         DeliveryAssignment assignment = assignmentRepository
-                .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
-                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND", "No assignment awaiting OTP verification for this order", HttpStatus.NOT_FOUND));
+                .findByOrderIdAndStatusIn(orderId,
+                        List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment awaiting OTP verification for this order", HttpStatus.NOT_FOUND));
 
         if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
-            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
         }
 
         DeliveryOtp dropOtp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.DROP)
-                .orElseThrow(() -> new BusinessException("DELIVERY_OTP_NOT_FOUND", "No OTP issued for this delivery", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_OTP_NOT_FOUND", "No OTP issued for this delivery",
+                        HttpStatus.NOT_FOUND));
 
         verifyOtpInternal(dropOtp, otp, "DELIVERY_OTP");
     }
 
     @Override
-    public ProofOfDeliveryResponseDto submitProofOfDelivery(UUID deliveryPartnerUserId, UUID orderId, MultipartFile photo,
-                                                              boolean deliveredToCustomerDirectly, boolean leftAtFrontDoor,
-                                                              boolean packagingIntact, boolean addressVerifiedManually, String notes) {
+    public ProofOfDeliveryResponseDto submitProofOfDelivery(UUID deliveryPartnerUserId, UUID orderId,
+            MultipartFile photo,
+            boolean deliveredToCustomerDirectly, boolean leftAtFrontDoor,
+            boolean packagingIntact, boolean addressVerifiedManually, String notes) {
         DeliveryAssignment assignment = assignmentRepository
-                .findByOrderIdAndStatusIn(orderId, List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
-                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND", "No assignment ready for proof of delivery on this order", HttpStatus.NOT_FOUND));
+                .findByOrderIdAndStatusIn(orderId,
+                        List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment ready for proof of delivery on this order", HttpStatus.NOT_FOUND));
 
         if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
-            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
         }
 
         if (photo == null || photo.isEmpty()) {
-            throw new BusinessException("DELIVERY_PROOF_PHOTO_REQUIRED", "A delivery photo is required", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("DELIVERY_PROOF_PHOTO_REQUIRED", "A delivery photo is required",
+                    HttpStatus.BAD_REQUEST);
         }
 
         DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
@@ -312,18 +346,23 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
     @Override
     public DeliveryAssignmentResponseDto completeDelivery(UUID deliveryPartnerUserId, UUID orderId) {
-        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId, DeliveryAssignmentStatus.ARRIVED_AT_DROP);
+        DeliveryAssignment assignment = requireOwnedAssignment(deliveryPartnerUserId, orderId,
+                DeliveryAssignmentStatus.ARRIVED_AT_DROP);
 
         DeliveryOtp dropOtp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.DROP)
-                .orElseThrow(() -> new BusinessException("DELIVERY_OTP_NOT_FOUND", "No OTP issued for this delivery", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_OTP_NOT_FOUND", "No OTP issued for this delivery",
+                        HttpStatus.NOT_FOUND));
 
         if (!dropOtp.isVerified()) {
-            throw new BusinessException("DELIVERY_OTP_NOT_VERIFIED", "Delivery OTP must be verified before completing delivery", HttpStatus.BAD_REQUEST);
+            throw new BusinessException("DELIVERY_OTP_NOT_VERIFIED",
+                    "Delivery OTP must be verified before completing delivery", HttpStatus.BAD_REQUEST);
         }
 
         DeliveryProofOfDelivery proof = proofRepository.findByAssignmentId(assignment.getId())
                 .filter(p -> p.getPhotoUrl() != null)
-                .orElseThrow(() -> new BusinessException("DELIVERY_PROOF_REQUIRED", "Proof of delivery (photo) must be submitted before completing delivery", HttpStatus.BAD_REQUEST));
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROOF_REQUIRED",
+                        "Proof of delivery (photo) must be submitted before completing delivery",
+                        HttpStatus.BAD_REQUEST));
 
         assignment.setStatus(DeliveryAssignmentStatus.DELIVERED);
         assignmentRepository.save(assignment);
@@ -331,49 +370,25 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
         customerOrderService.updateOrderStatus(orderId, "DELIVERED");
 
-        // Compute delivery fee using the same formula as recordEarning() for consistency.
-        double distanceKm = haversineKm(
-                assignment.getPickupLatitude(), assignment.getPickupLongitude(),
-                assignment.getDropLatitude(), assignment.getDropLongitude());
-        BigDecimal distanceFare = RATE_PER_KM
-                .multiply(BigDecimal.valueOf(distanceKm))
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal deliveryEarning = BASE_PAY.add(distanceFare);
-
-        // Fetch settlement fields from the Order (module-boundary-safe via CustomerOrderService).
-        OrderSettlementDto settlement = customerOrderService.getOrderForSettlement(orderId);
-
-        // Compute order subtotal = totalAmount − deliveryFee − tax (vendor commission basis).
-        BigDecimal orderDeliveryFee = settlement.getDeliveryFee() != null ? settlement.getDeliveryFee() : BigDecimal.ZERO;
-        BigDecimal orderTax = settlement.getEstimatedTax() != null ? settlement.getEstimatedTax() : BigDecimal.ZERO;
-        BigDecimal orderSubtotal = settlement.getTotalAmount()
-                .subtract(orderDeliveryFee)
-                .subtract(orderTax);
-        if (orderSubtotal.compareTo(BigDecimal.ZERO) < 0) {
-            orderSubtotal = BigDecimal.ZERO; // safety guard — should never happen
-        }
-
-        // Resolve vendor user id from the shop that won this order.
-        UUID vendorUserId = settlement.getAcceptedShopId() != null
-                ? shopLookupService.findOwnerUserIdByShopId(settlement.getAcceptedShopId()).orElse(null)
-                : null;
-
-        if (vendorUserId == null) {
-            log.warn("completeDelivery: could not resolve vendor userId for orderId={} (acceptedShopId={}) -- skipping vendor wallet credit",
-                    orderId, settlement.getAcceptedShopId());
-        }
-
-        // Credit vendor, delivery partner, and platform wallets.
-        paymentService.onDeliveryCompleted(
-                orderId,
-                orderSubtotal,
-                deliveryEarning,
-                vendorUserId != null ? vendorUserId : com.veggofresh.payment.service.WalletService.PLATFORM_WALLET_USER_ID,
-                assignment.getDeliveryPartnerUserId());
-
         recordEarning(assignment);
 
-        return mapToLightDto(assignment);
+        try {
+            orderRepository.findById(orderId).ifPresent(order -> {
+                BigDecimal subtotal = order.getItems() != null ? order.getItems().stream()
+                        .map(i -> i.getPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add) : BigDecimal.ZERO;
+                BigDecimal deliveryFee = order.getDeliveryFee() != null ? order.getDeliveryFee()
+                        : platformSettingsService.getDeliveryFeeAmount(); // fallback to admin-configured fee
+                UUID vendorUserId = order.getAcceptedShopId() != null
+                        ? shopLookupService.findOwnerUserIdByShopId(order.getAcceptedShopId()).orElse(null)
+                        : null;
+                paymentService.onDeliveryCompleted(orderId, subtotal, deliveryFee, vendorUserId, deliveryPartnerUserId);
+            });
+        } catch (Exception e) {
+            log.error("Failed to execute payment settlement for delivered order {}: {}", orderId, e.getMessage(), e);
+        }
+
+        return mapToFullDto(assignment);
     }
 
     @Override
@@ -404,35 +419,42 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         DeliveryAssignment assignment = assignmentRepository.findByOrderId(orderId).stream()
                 .filter(a -> deliveryPartnerUserId.equals(a.getDeliveryPartnerUserId()))
                 .findFirst()
-                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND", "No assignment found for this order belonging to you", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment found for this order belonging to you", HttpStatus.NOT_FOUND));
 
         return mapToFullDto(assignment);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<DeliveryAssignmentResponseDto> getMyOrders(UUID deliveryPartnerUserId, String status, Pageable pageable) {
+    public Page<DeliveryAssignmentResponseDto> getMyOrders(UUID deliveryPartnerUserId, String status,
+            Pageable pageable) {
         boolean wantCompleted = "completed".equalsIgnoreCase(status);
 
         List<DeliveryAssignment> all = assignmentRepository.findAll().stream()
                 .filter(a -> deliveryPartnerUserId.equals(a.getDeliveryPartnerUserId()))
                 .filter(a -> wantCompleted ? a.getStatus() == DeliveryAssignmentStatus.DELIVERED
-                                           : !TERMINAL_STATUSES.contains(a.getStatus()))
+                        : !TERMINAL_STATUSES.contains(a.getStatus()))
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .collect(Collectors.toList());
 
         int start = Math.min((int) pageable.getOffset(), all.size());
         int end = Math.min(start + pageable.getPageSize(), all.size());
+        // CHANGED THIS ROUND: every assignment in this list is already owned by
+        // this partner (deliveryPartnerUserId is null until accept, and the
+        // filter above requires it to equal this partner's id) -- so light dto
+        // was under-serving an already-entitled view. Full detail now.
         List<DeliveryAssignmentResponseDto> pageContent = all.subList(start, end).stream()
-                .map(this::mapToLightDto)
+                .map(this::mapToFullDto)
                 .collect(Collectors.toList());
 
         return new PageImpl<>(pageContent, pageable, all.size());
     }
 
     @Override
-    public void createAssignmentForOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName, String shopAddress,
-                                          double pickupLat, double pickupLng, double dropLat, double dropLng) {
+    public void createAssignmentForOrder(UUID orderId, UUID customerUserId, UUID shopOwnerUserId, String shopName,
+            String shopAddress,
+            double pickupLat, double pickupLng, double dropLat, double dropLng, String dropAddress) {
         DeliveryAssignment assignment = new DeliveryAssignment();
         assignment.setOrderId(orderId);
         assignment.setCustomerUserId(customerUserId);
@@ -443,10 +465,12 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         assignment.setPickupLongitude(pickupLng);
         assignment.setDropLatitude(dropLat);
         assignment.setDropLongitude(dropLng);
+        assignment.setDropAddress(dropAddress);
         assignment.setStatus(DeliveryAssignmentStatus.PENDING);
         assignment.setAssignedAt(Instant.now());
         // NEW: reads Admin's real configured timeout instead of a hardcoded constant.
-        assignment.setExpiresAt(Instant.now().plus(platformSettingsService.getDeliveryAcceptTimeoutSeconds(), ChronoUnit.SECONDS));
+        assignment.setExpiresAt(
+                Instant.now().plus(platformSettingsService.getDeliveryAcceptTimeoutSeconds(), ChronoUnit.SECONDS));
         assignmentRepository.save(assignment);
         recordHistory(assignment.getId(), DeliveryAssignmentStatus.PENDING);
 
@@ -460,8 +484,10 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     // -------------------------------------------------------------------------
 
     /**
-     * NEW THIS ROUND: bounded. Previously this would loop reassigning forever as long
-     * as any partner existed anywhere -- no cap on rounds or total elapsed time. Now
+     * NEW THIS ROUND: bounded. Previously this would loop reassigning forever as
+     * long
+     * as any partner existed anywhere -- no cap on rounds or total elapsed time.
+     * Now
      * checks Admin's two independent limits (whichever hits first) BEFORE creating
      * another round; hitting either one cancels the order for real via
      * customerOrderService.cancelOrderSystemInitiated(...), which also triggers the
@@ -480,7 +506,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         boolean elapsedExceeded = Instant.now().isAfter(firstBroadcastAt.plus(maxElapsedMinutes, ChronoUnit.MINUTES));
 
         if (roundsExceeded || elapsedExceeded) {
-            log.warn("Re-broadcast limit hit for order {} (rounds so far={}, max={}, elapsed cap hit={}) -- cancelling order",
+            log.warn(
+                    "Re-broadcast limit hit for order {} (rounds so far={}, max={}, elapsed cap hit={}) -- cancelling order",
                     previous.getOrderId(), roundsSoFar, maxRounds, elapsedExceeded);
             customerOrderService.cancelOrderSystemInitiated(previous.getOrderId(),
                     "No delivery partner accepted this order within the allowed re-broadcast limit");
@@ -491,7 +518,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
                 .map(DeliveryAssignment::getDeliveryPartnerUserId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
-        if (excludePartnerUserId != null) alreadyTried.add(excludePartnerUserId);
+        if (excludePartnerUserId != null)
+            alreadyTried.add(excludePartnerUserId);
 
         DeliveryPartnerProfile nextPartner = findNearestAvailablePartner(
                 previous.getPickupLatitude(), previous.getPickupLongitude(), alreadyTried);
@@ -511,9 +539,11 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         newAssignment.setPickupLongitude(previous.getPickupLongitude());
         newAssignment.setDropLatitude(previous.getDropLatitude());
         newAssignment.setDropLongitude(previous.getDropLongitude());
+        newAssignment.setDropAddress(previous.getDropAddress());
         newAssignment.setStatus(DeliveryAssignmentStatus.PENDING);
         newAssignment.setAssignedAt(Instant.now());
-        newAssignment.setExpiresAt(Instant.now().plus(platformSettingsService.getDeliveryAcceptTimeoutSeconds(), ChronoUnit.SECONDS));
+        newAssignment.setExpiresAt(
+                Instant.now().plus(platformSettingsService.getDeliveryAcceptTimeoutSeconds(), ChronoUnit.SECONDS));
         assignmentRepository.save(newAssignment);
         recordHistory(newAssignment.getId(), DeliveryAssignmentStatus.PENDING);
     }
@@ -521,7 +551,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     /**
      * Still only used to log a "nobody available" warning at creation time, same as
      * before -- the real broadcast surface is getNearbyAssignments (now correctly
-     * radius-clamped) plus the real accept-time radius check in acceptAssignment(). This
+     * radius-clamped) plus the real accept-time radius check in acceptAssignment().
+     * This
      * method does NOT pre-assign or notify a specific partner; it never did.
      */
     private DeliveryPartnerProfile findNearestAvailablePartner(double lat, double lng, List<UUID> excludeUserIds) {
@@ -536,7 +567,8 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
 
     private DeliveryPartnerProfile requireApprovedPartner(UUID userId) {
         DeliveryPartnerProfile partner = partnerRepository.findByUserId(userId)
-                .orElseThrow(() -> new BusinessException("DELIVERY_PROFILE_NOT_FOUND", "Delivery partner profile not found", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_PROFILE_NOT_FOUND",
+                        "Delivery partner profile not found", HttpStatus.NOT_FOUND));
 
         if (partner.getKycStatus() != DeliveryKycStatus.APPROVED) {
             throw new BusinessException("DELIVERY_KYC_NOT_APPROVED", "KYC not approved", HttpStatus.FORBIDDEN);
@@ -544,30 +576,43 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         return partner;
     }
 
-    private DeliveryAssignment findByOrderAndStatus(UUID orderId, DeliveryAssignmentStatus status, String errorCode, String message) {
+    private DeliveryAssignment findByOrderAndStatus(UUID orderId, DeliveryAssignmentStatus status, String errorCode,
+            String message) {
         return assignmentRepository.findByOrderIdAndStatusIn(orderId, List.of(status))
                 .orElseThrow(() -> new BusinessException(errorCode, message, HttpStatus.NOT_FOUND));
     }
 
-    private DeliveryAssignment requireOwnedAssignment(UUID deliveryPartnerUserId, UUID orderId, DeliveryAssignmentStatus expectedStatus) {
+    private DeliveryAssignment requireOwnedAssignment(UUID deliveryPartnerUserId, UUID orderId,
+            DeliveryAssignmentStatus expectedStatus) {
         DeliveryAssignment assignment = assignmentRepository
                 .findByOrderIdAndStatusIn(orderId, List.of(expectedStatus))
-                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND", "No assignment in expected state for this order", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment in expected state for this order", HttpStatus.NOT_FOUND));
 
         if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
-            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you", HttpStatus.FORBIDDEN);
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
         }
         return assignment;
     }
 
-    /** NEW THIS ROUND -- issued right after a successful accept, mirroring how the drop OTP is issued right after pickup. */
+    /**
+     * Issued right after a successful accept, mirroring how the drop OTP is issued
+     * right after pickup.
+     * Also called directly by regeneratePickupOtp() -- same logic, safe to call
+     * again on the same
+     * assignment since it always overwrites otpCode/expiresAt/verified/attempts
+     * regardless of whether
+     * a row already existed.
+     */
     private void issuePickupOtp(DeliveryAssignment assignment) {
         String otpCode = generateSixDigitOtp();
-        DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.PICKUP).orElseGet(DeliveryOtp::new);
+        DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.PICKUP)
+                .orElseGet(DeliveryOtp::new);
         otp.setAssignmentId(assignment.getId());
         otp.setType(DeliveryOtpType.PICKUP);
         otp.setOtpCode(otpCode);
-        otp.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        otp.setExpiresAt(Instant.now().plus(platformSettingsService.getOtpExpiryMinutes(), ChronoUnit.MINUTES));
         otp.setVerified(false);
         otp.setAttempts(0);
         otpRepository.save(otp);
@@ -575,23 +620,72 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         // MOCK — real delivery, this needs to actually reach the Vendor's screen (their
         // "ready for pickup"/order-detail view). No such Vendor-facing endpoint exists
         // yet to READ this value -- that's Vendor-round work. See NOTES_DELIVERY.md for
-        // the DeliveryPickupInfoService contract built this round specifically for that.
+        // the DeliveryPickupInfoService contract built this round specifically for
+        // that.
         log.info("MOCK — Delivery pickup OTP {} issued for assignment {}", otpCode, assignment.getId());
     }
 
-    /** Renamed from issueDeliveryOtp for clarity now that there's also a pickup OTP -- behavior unchanged except 4->6 digits. */
-    private void issueDropOtp(DeliveryAssignment assignment) {
+    /**
+     * Renamed from issueDeliveryOtp for clarity now that there's also a pickup OTP
+     * -- behavior unchanged except 4->6 digits.
+     * Also called directly by regenerateDropOtp() -- same logic, safe to call again
+     * on the same assignment.
+     * NEW: pushes the code to the Customer's order the instant it's generated
+     * (initial issuance at
+     * pickup, or a later regeneration) via
+     * CustomerOrderService.setDropOtpAvailable() -- the customer's
+     * track screen and dedicated drop-OTP endpoint both just read that same field,
+     * so this one push
+     * keeps both in sync automatically, no matter which path (issue vs. regenerate)
+     * produced the code.
+     */
+    private void issueDropOtp(DeliveryAssignment assignment, UUID orderId) {
         String otpCode = generateSixDigitOtp();
-        DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.DROP).orElseGet(DeliveryOtp::new);
+        DeliveryOtp otp = otpRepository.findByAssignmentIdAndType(assignment.getId(), DeliveryOtpType.DROP)
+                .orElseGet(DeliveryOtp::new);
         otp.setAssignmentId(assignment.getId());
         otp.setType(DeliveryOtpType.DROP);
         otp.setOtpCode(otpCode);
-        otp.setExpiresAt(Instant.now().plus(OTP_EXPIRY_MINUTES, ChronoUnit.MINUTES));
+        otp.setExpiresAt(Instant.now().plus(platformSettingsService.getOtpExpiryMinutes(), ChronoUnit.MINUTES));
         otp.setVerified(false);
         otp.setAttempts(0);
         otpRepository.save(otp);
 
+        customerOrderService.setDropOtpAvailable(orderId, otpCode);
+
         log.info("MOCK — Delivery drop OTP {} issued for assignment {}", otpCode, assignment.getId());
+    }
+
+    @Override
+    public void regeneratePickupOtp(UUID deliveryPartnerUserId, UUID orderId) {
+        DeliveryAssignment assignment = assignmentRepository
+                .findByOrderIdAndStatusIn(orderId,
+                        List.of(DeliveryAssignmentStatus.ACCEPTED, DeliveryAssignmentStatus.ARRIVED_AT_STORE))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment awaiting a pickup OTP for this order", HttpStatus.NOT_FOUND));
+
+        if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
+        }
+
+        issuePickupOtp(assignment);
+    }
+
+    @Override
+    public void regenerateDropOtp(UUID deliveryPartnerUserId, UUID orderId) {
+        DeliveryAssignment assignment = assignmentRepository
+                .findByOrderIdAndStatusIn(orderId,
+                        List.of(DeliveryAssignmentStatus.PICKED_UP, DeliveryAssignmentStatus.ARRIVED_AT_DROP))
+                .orElseThrow(() -> new BusinessException("DELIVERY_ASSIGNMENT_NOT_FOUND",
+                        "No assignment awaiting a drop OTP for this order", HttpStatus.NOT_FOUND));
+
+        if (!deliveryPartnerUserId.equals(assignment.getDeliveryPartnerUserId())) {
+            throw new BusinessException("DELIVERY_ASSIGNMENT_NOT_OWNED", "This assignment does not belong to you",
+                    HttpStatus.FORBIDDEN);
+        }
+
+        issueDropOtp(assignment, orderId);
     }
 
     private String generateSixDigitOtp() {
@@ -622,13 +716,14 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     }
 
     private void recordEarning(DeliveryAssignment assignment) {
+        BigDecimal total = estimateEarning(assignment);
+
         double distanceKm = haversineKm(assignment.getPickupLatitude(), assignment.getPickupLongitude(),
                 assignment.getDropLatitude(), assignment.getDropLongitude());
         BigDecimal distanceFare = RATE_PER_KM.multiply(BigDecimal.valueOf(distanceKm))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         BigDecimal peakBonus = BigDecimal.ZERO; // no surge/demand system exists yet
-        BigDecimal tip = BigDecimal.ZERO;       // no tip-collection mechanism exists yet
-        BigDecimal total = BASE_PAY.add(distanceFare).add(peakBonus).add(tip);
+        BigDecimal tip = BigDecimal.ZERO; // no tip-collection mechanism exists yet
 
         EarningRecord record = new EarningRecord();
         record.setDeliveryPartnerUserId(assignment.getDeliveryPartnerUserId());
@@ -649,6 +744,21 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     }
 
     private DeliveryAssignmentResponseDto mapToLightDto(DeliveryAssignment a) {
+        // Thumbnails only -- not customer identity, not item breakdown -- so
+        // safe to resolve pre-accept. Reuses the exact same real data path
+        // (CatalogProduct.imageUrl via the shared OrderResponseMapper) that
+        // mapToFullDto and Customer/Vendor's own order views already use.
+        // Defensive try/catch, same reasoning as mapToFullDto below: this is
+        // a nice-to-have preview, not something that should ever break the
+        // nearby-requests list if order lookup fails for any reason.
+        List<String> itemThumbnails = null;
+        try {
+            itemThumbnails = customerOrderService.getOrderByIdForFulfillment(a.getOrderId()).getItemThumbnails();
+        } catch (BusinessException e) {
+            log.warn("Could not resolve item thumbnails for assignment {} (orderId={}): {}",
+                    a.getId(), a.getOrderId(), e.getMessage());
+        }
+
         return DeliveryAssignmentResponseDto.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -657,11 +767,29 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
                 .pickupLongitude(a.getPickupLongitude())
                 .dropLatitude(a.getDropLatitude())
                 .dropLongitude(a.getDropLongitude())
+                .dropAddress(a.getDropAddress())
                 .assignedAt(a.getAssignedAt())
                 .expiresAt(a.getExpiresAt())
                 .shopName(a.getShopName())
                 .shopAddress(a.getShopAddress())
+                .estimatedEarning(estimateEarning(a))
+                .itemThumbnails(itemThumbnails)
                 .build();
+    }
+
+    /**
+     * Real settlement formula (recordEarning() below) computed early as a
+     * preview, using the same pickup/drop coordinates -- both already known
+     * the moment the assignment is created (dispatch time), well before any
+     * partner has accepted. peakBonus and tip are always zero right now, so
+     * this preview matches the eventual recorded EarningRecord.amount exactly.
+     */
+    private BigDecimal estimateEarning(DeliveryAssignment a) {
+        double distanceKm = haversineKm(a.getPickupLatitude(), a.getPickupLongitude(),
+                a.getDropLatitude(), a.getDropLongitude());
+        BigDecimal distanceFare = RATE_PER_KM.multiply(BigDecimal.valueOf(distanceKm))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        return BASE_PAY.add(distanceFare);
     }
 
     private ProofOfDeliveryResponseDto mapProofToDto(DeliveryProofOfDelivery proof) {
@@ -677,8 +805,15 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
     }
 
     private DeliveryAssignmentResponseDto mapToFullDto(DeliveryAssignment a) {
+        // Shop's real business phone -- not the owner's personal number.
+        // Falls back to the owner's personal phone only if, for some reason,
+        // no live Shop record can be resolved (defensive; shouldn't happen for
+        // a real dispatched assignment).
         String shopPhone = a.getShopOwnerUserId() != null
-                ? userLookupService.findById(a.getShopOwnerUserId()).map(UserSummaryDto::getPhone).orElse(null)
+                ? shopLookupService.findShopSummaryByOwnerUserId(a.getShopOwnerUserId())
+                        .map(ShopSummaryDto::getBusinessPhone)
+                        .orElseGet(() -> userLookupService.findById(a.getShopOwnerUserId())
+                                .map(UserSummaryDto::getPhone).orElse(null))
                 : null;
         String customerPhone = a.getCustomerUserId() != null
                 ? userLookupService.findById(a.getCustomerUserId()).map(UserSummaryDto::getPhone).orElse(null)
@@ -696,6 +831,35 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
                 .map(this::mapProofToDto)
                 .orElse(null);
 
+        // Full order contents + customer name -- reuses the same shared
+        // OrderResponseMapper Customer/Vendor already use, so item names,
+        // customer display name, and the order total all stay consistent
+        // across every surface. This method is only ever reached via
+        // getAssignmentDetail() (ownership-checked) or the post-accept action
+        // methods below, so it's safe to resolve full order contents here.
+        String customerName = null;
+        List<DeliveryAssignmentResponseDto.OrderItemSummaryDto> items = null;
+        BigDecimal orderTotal = null;
+        List<String> itemThumbnails = null;
+        try {
+            var order = customerOrderService.getOrderByIdForFulfillment(a.getOrderId());
+            customerName = order.getCustomerName();
+            orderTotal = order.getTotalAmount();
+            itemThumbnails = order.getItemThumbnails();
+            items = order.getItems().stream()
+                    .map(item -> DeliveryAssignmentResponseDto.OrderItemSummaryDto.builder()
+                            .productId(item.getProductId())
+                            .productName(item.getProductName())
+                            .quantity(item.getQuantity())
+                            .price(item.getPrice())
+                            .subTotal(item.getSubTotal())
+                            .build())
+                    .collect(Collectors.toList());
+        } catch (BusinessException e) {
+            log.warn("Could not resolve order fulfillment detail for assignment {} (orderId={}): {}",
+                    a.getId(), a.getOrderId(), e.getMessage());
+        }
+
         return DeliveryAssignmentResponseDto.builder()
                 .id(a.getId())
                 .orderId(a.getOrderId())
@@ -704,12 +868,18 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
                 .pickupLongitude(a.getPickupLongitude())
                 .dropLatitude(a.getDropLatitude())
                 .dropLongitude(a.getDropLongitude())
+                .dropAddress(a.getDropAddress())
                 .assignedAt(a.getAssignedAt())
                 .expiresAt(a.getExpiresAt())
                 .shopName(a.getShopName())
                 .shopAddress(a.getShopAddress())
                 .shopPhone(shopPhone)
+                .customerName(customerName)
                 .customerPhone(customerPhone)
+                .estimatedEarning(estimateEarning(a))
+                .items(items)
+                .orderTotal(orderTotal)
+                .itemThumbnails(itemThumbnails)
                 .timeline(timeline)
                 .proofOfDelivery(proofDto)
                 .build();
@@ -721,7 +891,7 @@ DeliveryAssignmentServiceImpl implements DeliveryAssignmentService {
         double dLon = Math.toRadians(lon2 - lon1);
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
     }

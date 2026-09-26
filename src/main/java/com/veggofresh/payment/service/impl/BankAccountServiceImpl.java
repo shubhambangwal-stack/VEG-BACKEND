@@ -47,6 +47,7 @@ public class BankAccountServiceImpl implements BankAccountService {
         account.setUpiId(dto.getUpiId() != null ? dto.getUpiId().trim() : null);
 
         UserBankAccount saved = bankAccountRepository.save(account);
+        log.info("Bank account saved/updated for userId={}", userId);
         return mapToDto(saved);
     }
 
@@ -55,7 +56,8 @@ public class BankAccountServiceImpl implements BankAccountService {
     public UserBankAccountDto getBankAccountByUserId(UUID userId) {
         return bankAccountRepository.findByUserId(userId)
                 .map(this::mapToDto)
-                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND", "No bank account details saved for this user", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new BusinessException("BANK_ACCOUNT_NOT_FOUND",
+                        "No bank account details saved for this user", HttpStatus.NOT_FOUND));
     }
 
     private UserBankAccountDto mapToDto(UserBankAccount acc) {
@@ -67,7 +69,6 @@ public class BankAccountServiceImpl implements BankAccountService {
                 .ifscCode(acc.getIfscCode())
                 .bankName(acc.getBankName())
                 .upiId(acc.getUpiId())
-                .isVerified(acc.isVerified())
                 .createdAt(acc.getCreatedAt())
                 .updatedAt(acc.getUpdatedAt())
                 .build();

@@ -1,6 +1,7 @@
 package com.veggofresh.vendor.service;
 
 import com.veggofresh.vendor.dto.CategoryDto;
+import com.veggofresh.vendor.dto.CategoryTreeDto;
 import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.dto.ShopDto;
 import com.veggofresh.vendor.dto.SubcategoryDto;
@@ -69,4 +70,22 @@ public interface ProductCatalogService {
      * anywhere, or listed only outside range, or listing vendor offline).
      */
     Set<UUID> getShopIdsForProduct(UUID catalogProductId, double latitude, double longitude);
+
+    /**
+     * NEW -- one category with its subcategories and each subcategory's eligible
+     * (radius-filtered, listed) products, all nested in one response. Categories/
+     * subcategories themselves are not radius-filtered, matching browseCategories()/
+     * browseSubcategories() above; only the nested products are.
+     */
+    CategoryTreeDto getCategoryTree(UUID categoryId, double latitude, double longitude);
+
+    /**
+     * NEW -- the entire active catalog, every category with every subcategory with
+     * every eligible product nested inside, in one response. Intended for testing/
+     * admin tooling, not the production mobile app -- cost scales with total catalog
+     * size since radius-eligibility must be computed for every product across every
+     * subcategory in a single call. See ProductCatalogServiceImpl for the same
+     * overfetch-and-filter-in-Java caveat that already applies to searchProducts().
+     */
+    List<CategoryTreeDto> getFullCatalogTree(double latitude, double longitude);
 }

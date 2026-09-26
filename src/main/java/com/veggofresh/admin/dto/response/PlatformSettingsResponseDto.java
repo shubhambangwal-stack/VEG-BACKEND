@@ -14,11 +14,15 @@ import java.time.Instant;
 @AllArgsConstructor
 public class PlatformSettingsResponseDto {
     private double deliveryRadiusKm;
-    private BigDecimal platformCommissionPercent;
+    private BigDecimal platformFeeAmount;
+    private BigDecimal deliveryFeeAmount;
     private int vendorAcceptTimeoutSeconds;
     private int deliveryAcceptTimeoutSeconds;
     private int rebroadcastMaxRounds;
     private int rebroadcastMaxElapsedMinutes;
+
+    /** No matching field on PlatformSettingsCeilingsDto -- this one has no hard ceiling. */
+    private int otpExpiryMinutes;
 
     /** Echoes the hard ceilings back so the Admin UI can show "max allowed: X" inline, without hardcoding them client-side too. */
     private PlatformSettingsCeilingsDto ceilings;

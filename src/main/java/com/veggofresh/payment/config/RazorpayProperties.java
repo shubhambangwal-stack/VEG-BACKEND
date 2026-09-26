@@ -35,9 +35,6 @@ public class RazorpayProperties {
     /** Gates the payout client (Phase 3) -- vendor/delivery payouts require Razorpay Route/Payout account activation (KYC), which is a manual Razorpay dashboard step, not something this app can turn on by itself. */
     private boolean payoutsEnabled = false;
 
-    /** Platform commission percentage (e.g. 10 = 10%). Used in settlement splits. */
-    private int platformCommissionPercent = 10;
-
     /** RazorpayX Virtual Business Account Number for payouts. */
     private String accountNumber = "2323230073112811";
 

@@ -88,7 +88,31 @@ public class Shop extends BaseEntity {
     @Builder.Default
     private boolean hasBusinessLocation = false;
 
-    // ── Onboarding: Verification & Documentation (Step 3) ───────────────
+    // ── Onboarding: Bank Details (Step 3) ───────────────────────────────
+    // FLAGGED: belongs to Payment module long-term -- stored here for now
+    // per same team decision as Delivery. accountNumber is stored PLAIN --
+    // must be encrypted at rest before any production use. See NOTES_VENDOR.md.
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    @Column(name = "account_holder_name", length = 255)
+    private String accountHolderName;
+
+    @Column(name = "account_number", length = 50)
+    private String accountNumber;
+
+    @Column(name = "ifsc_code", length = 20)
+    private String ifscCode;
+
+    @Column(name = "agreed_to_payout_terms", nullable = false)
+    @Builder.Default
+    private boolean agreedToPayoutTerms = false;
+
+    @Column(name = "has_bank_details", nullable = false)
+    @Builder.Default
+    private boolean hasBankDetails = false;
+
+    // ── Onboarding: Verification & Documentation (Step 4) ───────────────
     @Column(name = "application_submitted_at")
     private Instant applicationSubmittedAt;
 

@@ -11,6 +11,7 @@ import com.veggofresh.customer.service.OrderService;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
+import com.veggofresh.payment.service.PaymentService;
 import com.veggofresh.payment.service.WalletService;
 import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
@@ -53,6 +54,7 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderService orderService;
     private final OrderResponseMapper orderResponseMapper;
     private final WalletService walletService;
+    private final PaymentService paymentService;
     private final PlatformSettingsService platformSettingsService;
     private final NotificationService notificationService;
     private final ShopLookupService shopLookupService;
@@ -71,7 +73,9 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
 
         int claimed = orderRepository.atomicAccept(orderId, shopId, OrderStatus.CONFIRMED, OrderStatus.PLACED);
         if (claimed > 0) {
-            // Confirmed: notify the customer and the winning shop owner.
+            // Confirmed: notify payment service, the customer, and the winning shop owner.
+            paymentService.onOrderAccepted(orderId);
+
             orderRepository.findById(orderId).ifPresent(order -> {
                 notificationService.send(order.getUserId(), NotificationRecipientRole.CUSTOMER, NotificationType.ORDER_CONFIRMED,
                         "Order confirmed", "Your order " + order.getOrderNumber() + " has been confirmed by the shop",
@@ -141,15 +145,23 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getOrderRequestsForShop(UUID shopId) {
+        int timeoutSeconds = platformSettingsService.getVendorAcceptTimeoutSeconds();
         return orderRepository.findRequestsForShop(shopId, OrderStatus.PLACED).stream()
-                .map(orderResponseMapper::mapToDto)
+                .map(order -> {
+                    OrderResponseDto dto = orderResponseMapper.mapToDto(order);
+                    // Same deadline VendorAcceptTimeoutSweepService itself uses to decide
+                    // when to auto-cancel -- surfaced here so the vendor app can show a
+                    // live countdown instead of the timeout being invisible.
+                    dto.setVendorAcceptExpiresAt(order.getCreatedAt().plusSeconds(timeoutSeconds));
+                    return dto;
+                })
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<OrderResponseDto> getAcceptedOrdersForShop(UUID shopId) {
-        return orderRepository.findByAcceptedShopId(shopId).stream()
+        return orderRepository.findByAcceptedShopIdOrderByCreatedAtDesc(shopId).stream()
                 .map(orderResponseMapper::mapToDto)
                 .collect(Collectors.toList());
     }
@@ -180,13 +192,21 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     }
 
     @Override
+    public void setDropOtpAvailable(UUID orderId, String dropOtp) {
+        log.info("Drop OTP now available for order {} (delivery partner arrived at drop)", orderId);
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDropOtp(dropOtp);
+        orderRepository.save(order);
+    }
+
+    @Override
     public void cancelOrderSystemInitiated(UUID orderId, String reason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found"));
 
-        if (order.getStatus() == OrderStatus.DELIVERED || order.getStatus() == OrderStatus.CANCELLED) {
-            log.info("cancelOrderSystemInitiated no-op for order {} -- already terminal ({})", orderId, order.getStatus());
-            return;
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return; // idempotent no-op
         }
 
         log.warn("System-initiated cancellation for order {}: {}", orderId, reason);
@@ -251,5 +271,13 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
                 .estimatedTax(order.getEstimatedTax())
                 .acceptedShopId(order.getAcceptedShopId())
                 .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderResponseDto getOrderByIdForFulfillment(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Order not found: " + orderId));
+        return orderResponseMapper.mapToDto(order);
     }
 }

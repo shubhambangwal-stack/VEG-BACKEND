@@ -21,32 +21,35 @@ spring:
 
   flyway:
     enabled: true
-    out-of-order: true
+    out-of-order: false
+
+veggofresh:
+  firebase:
+    service-account-path: ${FIREBASE_SERVICE_ACCOUNT_PATH:classpath:service-account.json}
+
+  # ── Cloudinary (local dev credentials) ──────────────────────
+  # These are your local dev credentials. In production, set the
+  # CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET
+  # environment variables instead — they take precedence.
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:nn6v1iwx}
+    api-key: ${CLOUDINARY_API_KEY:225473847594236}
+    api-secret: ${CLOUDINARY_API_SECRET:WgtN1vIiMis3kLHAZWDkO28N6nM}
+
+  # ── Razorpay (local dev / test credentials) ──────────────────
+  # Uses Razorpay test-mode keys — safe for local development.
+  # In production set RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET /
+  # RAZORPAY_WEBHOOK_SECRET as environment variables.
+  razorpay:
+    key-id: ${RAZORPAY_KEY_ID:rzp_test_TTUpC17cOLtNl8}
+    key-secret: ${RAZORPAY_KEY_SECRET:1czeynu9LP76ww3wC83jW9UX}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=}
+    payouts-enabled: ${RAZORPAY_PAYOUTS_ENABLED:true}
+    account-number: ${RAZORPAY_ACCOUNT_NUMBER:2323230073112811}
+    platform-commission-percent: 10
 
 logging:
   level:
     com.veggofresh: DEBUG
     org.springframework.security: DEBUG
     org.flywaydb: DEBUG
-
-veggofresh:
-  # ── Razorpay ──────────────────────────────────────────────
-  razorpay:
-    # ⚠ Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET env vars in all environments.
-    # Test keys start with rzp_test_, live keys start with rzp_live_
-    key-id: rzp_test_TTUpC17cOLtNl8
-    key-secret: 1czeynu9LP76ww3wC83jW9UX
-    # Webhook secret is configured in Razorpay Dashboard → Webhooks → Secret
-    webhook-secret: YzT8kN2pQrX9vL4mB7wS1tR6uJ0hF3eA5cD8nK2xM4Q=
-    # payouts-enabled becomes true once Razorpay Route KYC is approved
-    payouts-enabled: true
-    # RazorpayX Virtual Business Account Number for Payouts
-    account-number: "2323230073112811"
-    # Platform commission % deducted from vendor settlement (e.g. 10 = 10%)
-    platform-commission-percent: 10
-
-  # ── Cloudinary ────────────────────────────────────────────
-  cloudinary:
-    cloud-name: nn6v1iwx
-    api-key: "225473847594236"
-    api-secret: WgtN1vIiMis3kLHAZWDkO28N6nM

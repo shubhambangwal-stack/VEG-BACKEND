@@ -4,6 +4,7 @@ import com.veggofresh.delivery.entity.DeliveryAssignmentStatus;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -18,17 +19,57 @@ public class DeliveryAssignmentResponseDto {
     private double pickupLongitude;
     private double dropLatitude;
     private double dropLongitude;
+
+    /**
+     * Customer's delivery address as free text -- a dispatch-time snapshot,
+     * same idea as shopAddress below. Populated on both the pre-accept
+     * (light) and post-accept (full) views, same visibility rule as
+     * shopName/shopAddress, since it's needed for navigation before a
+     * partner decides whether to accept.
+     */
+    private String dropAddress;
+
     private Instant assignedAt;
     private Instant expiresAt;
 
     // Phase B: contact info + timeline. shopPhone/customerPhone resolved live via
-    // UserLookupService; shopName/shopAddress are the dispatch-time snapshot (see
-    // NOTES.md -- no ShopLookupService exists yet). All nullable: populated only
-    // on the single-assignment detail endpoint, not on list/nearby endpoints.
+    // UserLookupService; shopName/shopAddress are the dispatch-time snapshot.
+    // customerPhone/customerName/items/orderTotal are nullable: only populated
+    // on the single-assignment detail view, and only once THIS partner has
+    // actually accepted the assignment (see mapToFullDto) -- shown on the
+    // request/nearby list, shopName/shopAddress and estimatedEarning are the
+    // only identity-adjacent fields exposed pre-accept.
     private String shopName;
     private String shopAddress;
     private String shopPhone;
+    private String customerName;
     private String customerPhone;
+
+    /**
+     * Up to 3 product image URLs for this order -- same source
+     * (CatalogProduct.imageUrl) and shape as OrderResponseDto.itemThumbnails,
+     * resolved via CustomerOrderService.getOrderByIdForFulfillment(orderId).
+     * Populated on BOTH the pre-accept (light/nearby) and post-accept (full)
+     * views, unlike items/customerName/orderTotal below -- product photos
+     * aren't customer-identifying, so there's no reason to withhold them
+     * before a partner decides whether to accept.
+     */
+    private List<String> itemThumbnails;
+
+    /**
+     * Base pay + distance fare, computed with the exact same formula used at
+     * real settlement time (recordEarning()) -- peak bonus and tip are always
+     * zero right now, so this preview matches the eventual real payout.
+     * Populated on both the pre-accept (light) and post-accept (full) views,
+     * since it's the partner's own potential earning and doesn't depend on
+     * anyone else's identity.
+     */
+    private BigDecimal estimatedEarning;
+
+    /** Order contents -- only populated once this partner has accepted (see mapToFullDto). */
+    private List<OrderItemSummaryDto> items;
+    private BigDecimal orderTotal;
+
     private List<TimelineEntryDto> timeline;
     private ProofOfDeliveryResponseDto proofOfDelivery;
 
@@ -37,5 +78,15 @@ public class DeliveryAssignmentResponseDto {
     public static class TimelineEntryDto {
         private DeliveryAssignmentStatus status;
         private Instant occurredAt;
+    }
+
+    @Getter
+    @Builder
+    public static class OrderItemSummaryDto {
+        private UUID productId;
+        private String productName;
+        private int quantity;
+        private BigDecimal price;
+        private BigDecimal subTotal;
     }
 }

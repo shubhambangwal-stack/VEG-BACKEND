@@ -22,6 +22,11 @@ public class OrderTrackingResponseDto {
     private String estimatedDeliveryWindow;
     private double currentLatitude;
     private double currentLongitude;
+
+    /** Null until a shop has accepted this order -- see OrderServiceImpl.trackOrder(). */
+    private String shopName;
+    private String shopBusinessPhone;
+
     private String deliveryAgentName;
     private String deliveryAgentPhone;
     private String deliveryAgentPhotoUrl;
@@ -32,4 +37,13 @@ public class OrderTrackingResponseDto {
     private String deliveryLocationNote;
     private Instant deliveredAt;
     private boolean hasBeenRated;
+
+    /**
+     * Null until the drop OTP is generated -- pushed in by
+     * CustomerOrderService.setDropOtpAvailable() the moment the delivery partner marks
+     * "picked up" (or later, if regenerated). Also independently retrievable via the
+     * dedicated {@code GET /api/customer/orders/{id}/drop-otp} endpoint, which reads
+     * this same value.
+     */
+    private String dropOtp;
 }
