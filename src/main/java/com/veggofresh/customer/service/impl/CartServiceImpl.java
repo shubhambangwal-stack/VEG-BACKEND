@@ -63,7 +63,23 @@ public class CartServiceImpl implements CartService {
         List<CartResponseDto> result = new ArrayList<>();
         int index = 1;
         for (Cart cart : carts) {
-            result.add(mapToDto(cart, index++));
+            // A cart is only worth returning if it still has something to
+            // check out. An empty one renders as an extra "Cart N" that the
+            // front-end would offer as a (broken) checkout button, so drop
+            // it. Two ways a stored cart ends up empty: it lost its last
+            // item, or every remaining item's product is no longer
+            // available to this customer (mapToDto skips unresolvable
+            // products). The label index only advances for carts we
+            // actually return, so "Cart 1, Cart 2, ..." stays contiguous.
+            if (cart.getItems().isEmpty()) {
+                continue;
+            }
+            CartResponseDto dto = mapToDto(cart, index);
+            if (dto.getItems().isEmpty()) {
+                continue;
+            }
+            result.add(dto);
+            index++;
         }
         return result;
     }
@@ -133,6 +149,13 @@ public class CartServiceImpl implements CartService {
                 .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart",
                         HttpStatus.NOT_FOUND));
 
+        // Quantity 0 (or below) means "remove this line" — a zero-quantity
+        // row would otherwise sit in the cart forever, showing up as an
+        // item that costs nothing and can never be checked out.
+        if (quantity <= 0) {
+            return removeCartItem(userId, cartItemId);
+        }
+
         item.setQuantity(quantity);
         cartItemRepository.save(item);
 
@@ -153,12 +176,18 @@ public class CartServiceImpl implements CartService {
         cart.getItems().remove(item);
         cartItemRepository.delete(item);
 
-        // Carts are static once formed — deliberately NOT recomputing
-        // candidateVendorIds here even though removal can leave the cart
-        // more fragmented than strictly necessary (confirmed simplification,
-        // PROJECT_STATE section 2).
-        recomputePromo(cart);
-        cartRepository.save(cart);
+        if (cart.getItems().isEmpty()) {
+            // Last item gone: retire the cart instead of leaving an empty
+            // shell behind, same as clearCart does after a checkout.
+            retireCart(cart);
+        } else {
+            // Carts are static once formed — deliberately NOT recomputing
+            // candidateVendorIds here even though removal can leave the cart
+            // more fragmented than strictly necessary (confirmed simplification,
+            // PROJECT_STATE section 2).
+            recomputePromo(cart);
+            cartRepository.save(cart);
+        }
 
         return getOpenCarts(userId);
     }
@@ -278,6 +307,16 @@ public class CartServiceImpl implements CartService {
                 cart.setPromoDiscount(discount);
             }
         }
+    }
+
+    /**
+     * Soft-deletes a cart that has no items left, so it stops being an open
+     * cart. A later add-to-cart simply builds a fresh one with a full
+     * candidate-vendor set rather than reusing the retired, narrowed one.
+     */
+    private void retireCart(Cart cart) {
+        cart.softDelete();
+        cartRepository.save(cart);
     }
 
     private CartResponseDto mapToDto(Cart cart, int index) {
