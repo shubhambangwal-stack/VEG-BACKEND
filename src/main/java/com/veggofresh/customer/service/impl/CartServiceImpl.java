@@ -203,24 +203,18 @@ public class CartServiceImpl implements CartService {
 
         List<ProductDto> recommendations = new ArrayList<>();
         for (CartItem item : allItems) {
-            try {
-                List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0],
-                        location[1]);
-                if (related != null) {
-                    for (ProductDto p : related) {
-                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
-                            recommendations.add(p);
-                        }
+            // No try/catch. getRelatedProducts throws only when the product row
+            // is genuinely gone, which is a real error worth surfacing --
+            // swallowing it would mark this transaction rollback-only and
+            // resurface as UnexpectedRollbackException at commit.
+            List<ProductDto> related = productCatalogService.getRelatedProducts(item.getProductId(), location[0],
+                    location[1]);
+            if (related != null) {
+                for (ProductDto p : related) {
+                    if (recommendations.stream().noneMatch(rec -> rec.getId().equals(p.getId()))) {
+                        recommendations.add(p);
                     }
                 }
-            } catch (BusinessException e) {
-                // One unavailable product shouldn't kill the whole
-                // recommendation list -- but only a domain-level "not
-                // available" is safe to skip. Swallowing anything else (or
-                // swallowing a nested-transaction failure) poisons this
-                // method's own transaction and resurfaces as
-                // UnexpectedRollbackException at commit.
-                log.debug("Skipping related products for cart item {}: {}", item.getProductId(), e.getMessage());
             }
         }
         return recommendations.stream().limit(6).collect(Collectors.toList());
@@ -353,32 +347,21 @@ public class CartServiceImpl implements CartService {
     }
 
     /**
-     * Vendor's getProductById throws rather than returning null on
-     * not-found/not-eligible. Wrapping it here restores the graceful
-     * per-item skip the original `if (product != null)` checks throughout
-     * this class visually intended -- now meaningfully reachable, since
-     * radius eligibility makes "this one item became unavailable" a real,
-     * expected case rather than a rare one.
+     * Resolves one product for response mapping, or null when it is no longer
+     * available to this customer (removed, deactivated, or no vendor carrying it
+     * in range). Callers skip nulls, so one unavailable product doesn't break a
+     * whole cart/wishlist/order response.
      *
-     * ⚠️ CAVEAT: never swallow an exception that was raised INSIDE a nested
-     * @Transactional call joining this method's transaction -- Spring marks
-     * the shared transaction rollback-only and the swallowed failure resurfaces
-     * as UnexpectedRollbackException at commit, long after this catch block.
-     * getProductById now signals "not found" as data (Optional lookup inside
-     * ProductCatalogServiceImpl) for exactly this reason.
+     * <p>⚠️ Deliberately has NO try/catch. It uses the non-throwing
+     * {@code findEligibleProductById}, because a swallowed exception from a
+     * nested {@code @Transactional} method still marks the caller's shared
+     * transaction rollback-only and resurfaces as
+     * {@code UnexpectedRollbackException} at commit. Never reintroduce a
+     * catch-and-return-null here.
      */
     private ProductDto safeGetProduct(UUID productId, double[] location) {
-        try {
-            return productCatalogService.getProductById(productId, location[0], location[1]);
-        } catch (BusinessException e) {
-            log.debug("Skipping unavailable product {} in cart mapping: {}", productId, e.getMessage());
-            return null;
-        } catch (Exception e) {
-            // Unexpected failure -- do NOT hide it. Rethrow so it surfaces as
-            // a real error instead of an empty line item plus a later
-            // UnexpectedRollbackException.
-            log.warn("Unexpected failure resolving product {} for cart mapping", productId, e);
-            throw e;
-        }
+        return productCatalogService
+                .findEligibleProductById(productId, location[0], location[1])
+                .orElse(null);
     }
 }

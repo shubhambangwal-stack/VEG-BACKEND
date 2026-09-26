@@ -781,17 +781,15 @@ public class OrderServiceImpl implements OrderService {
      * pivot). Wrapping it here restores the graceful per-item skip several
      * `if (product != null)` checks in this class visually intended.
      *
-     * ⚠️ CAVEAT: only a domain-level BusinessException is safe to swallow
-     * here. Swallowing anything else -- or swallowing a nested @Transactional
-     * failure, which silently marks the shared transaction rollback-only --
-     * turns into UnexpectedRollbackException at commit instead.
+     * ⚠️ Uses the non-throwing findEligibleProductById with NO try/catch on
+     * purpose. Swallowing an exception raised inside a nested @Transactional
+     * method still marks this transaction rollback-only, and the failure only
+     * surfaces at commit as UnexpectedRollbackException -- long after the catch
+     * block, with no clue which item caused it.
      */
     private ProductDto safeGetProduct(UUID productId, double latitude, double longitude) {
-        try {
-            return productCatalogService.getProductById(productId, latitude, longitude);
-        } catch (BusinessException e) {
-            log.debug("Skipping unavailable product {} in order mapping: {}", productId, e.getMessage());
-            return null;
-        }
+        return productCatalogService
+                .findEligibleProductById(productId, latitude, longitude)
+                .orElse(null);
     }
 }

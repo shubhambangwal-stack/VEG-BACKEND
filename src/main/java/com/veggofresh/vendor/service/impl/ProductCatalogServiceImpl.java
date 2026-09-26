@@ -168,6 +168,18 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<ProductDto> findEligibleProductById(UUID catalogProductId, double latitude, double longitude) {
+        // Pure read, no exceptions on the "not available" path -- see the
+        // interface Javadoc for why that distinction is load-bearing for every
+        // caller resolving products for rows that already exist (cart items,
+        // wishlist entries, order lines).
+        return adminProductService.findProductById(catalogProductId)
+                .filter(ProductResponseDto::isActive)
+                .flatMap(product -> toProductDtoIfEligible(product, latitude, longitude));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<ProductDto> getRelatedProducts(UUID catalogProductId, double latitude, double longitude) {
         // Same reasoning as getProductById: no exception-swallowing around a
         // nested @Transactional call, or this poisons the caller's transaction.

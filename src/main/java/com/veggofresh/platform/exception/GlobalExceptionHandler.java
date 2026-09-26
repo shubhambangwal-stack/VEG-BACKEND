@@ -6,10 +6,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.transaction.UnexpectedRollbackException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.stream.Collectors;
@@ -153,6 +157,47 @@ public class GlobalExceptionHandler {
     // -------------------------------------------------------------------------
     // 500 — Catch-all
     // -------------------------------------------------------------------------
+
+    /**
+     * Dedicated handler for {@link UnexpectedRollbackException} so this class of
+     * bug is at least self-describing in the logs.
+     *
+     * <p>This exception only ever means one thing: an exception was raised
+     * inside a nested {@code @Transactional} method, that method marked the
+     * shared transaction rollback-only, and the outer code then <em>swallowed</em>
+     * the exception and returned normally — so the failure was invisible until
+     * commit. {@code noRollbackFor} on the outer method does not prevent it,
+     * because the flag is set by the innermost advice the exception passes
+     * through.
+     *
+     * <p>The stack trace below therefore points at the commit site (useless) and
+     * not at the swallowed exception (the real culprit), so this handler logs an
+     * explicit pointer to the pattern to go and look for. The fix is never to
+     * suppress the error here — it is to stop swallowing exceptions across
+     * transactional boundaries, and to express expected conditions as return
+     * values (e.g. an {@code Optional}) rather than exceptions.
+     */
+    @ExceptionHandler(UnexpectedRollbackException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnexpectedRollback(UnexpectedRollbackException ex) {
+        log.error("UnexpectedRollbackException on {}: a nested @Transactional method failed and the "
+                        + "enclosing code swallowed the exception, so the rollback-only flag only "
+                        + "surfaced at commit. Look for a catch-block that swallows a domain exception "
+                        + "raised by a nested @Transactional call (e.g. a per-item 'skip if unavailable' "
+                        + "fallback).",
+                currentRequestUri(), ex);
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("The request could not be completed. Please try again.",
+                        "TRANSACTION_ROLLED_BACK"));
+    }
+
+    private String currentRequestUri() {
+        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+        if (attributes instanceof ServletRequestAttributes servletAttributes) {
+            return servletAttributes.getRequest().getRequestURI();
+        }
+        return "unknown";
+    }
 
     /**
      * Catch-all handler for any unhandled exception.

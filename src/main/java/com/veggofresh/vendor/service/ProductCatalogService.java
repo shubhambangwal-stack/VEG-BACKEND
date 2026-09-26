@@ -50,6 +50,40 @@ public interface ProductCatalogService {
 
     ProductDto getProductById(UUID catalogProductId, double latitude, double longitude);
 
+    /**
+     * NON-THROWING variant of {@link #getProductById}. Returns
+     * {@link Optional#empty()} instead of throwing when the product is missing,
+     * inactive, or has no vendor carrying it in range of the given location.
+     *
+     * <p>⚠️ Use THIS, not {@code getProductById}, when "not available near you"
+     * is a normal per-item outcome rather than an error -- specifically when
+     * resolving products belonging to rows that already exist (a cart's items, a
+     * wishlist's entries, an order's lines).
+     *
+     * <p>Why this matters, in hard-won detail: {@code getProductById} throws a
+     * {@code BusinessException}, and that exception is raised from inside a
+     * nested {@code @Transactional} method. When such a method fails while
+     * participating in a caller's transaction, Spring marks the SHARED
+     * transaction rollback-only. Any caller that catches the exception and
+     * carries on then appears to succeed, but fails much later at commit with:
+     *
+     * <pre>
+     * UnexpectedRollbackException: Transaction silently rolled back
+     * because it has been marked as rollback-only
+     * </pre>
+     *
+     * <p>{@code noRollbackFor = BusinessException.class} on the throwing method
+     * does NOT prevent this, because the rollback-only flag is set by the
+     * innermost transactional advice the exception passes through, not by the
+     * one that declares {@code noRollbackFor}. Since the nested read helper
+     * ({@code AdminProductServiceImpl}) has no such attribute, the flag sticks.
+     *
+     * <p>So: the only reliable way to tolerate "this product is unavailable" is
+     * to never raise an exception for it in the first place. This method does
+     * exactly that -- a pure read that cannot mark anything rollback-only.
+     */
+    java.util.Optional<ProductDto> findEligibleProductById(UUID catalogProductId, double latitude, double longitude);
+
     List<ProductDto> getRelatedProducts(UUID catalogProductId, double latitude, double longitude);
 
     /**

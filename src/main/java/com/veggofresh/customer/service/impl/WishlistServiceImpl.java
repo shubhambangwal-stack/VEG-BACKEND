@@ -77,21 +77,16 @@ public class WishlistServiceImpl implements WishlistService {
 
         List<ProductDto> recommendations = new ArrayList<>();
         for (ProductDto p : wishlist) {
-            try {
-                List<ProductDto> related = productCatalogService.getRelatedProducts(p.getId(), location[0], location[1]);
-                if (related != null) {
-                    for (ProductDto r : related) {
-                        if (recommendations.stream().noneMatch(rec -> rec.getId().equals(r.getId()))) {
-                            recommendations.add(r);
-                        }
+            // No try/catch -- a swallowed exception from a nested
+            // @Transactional method still marks this transaction rollback-only
+            // and resurfaces as UnexpectedRollbackException at commit.
+            List<ProductDto> related = productCatalogService.getRelatedProducts(p.getId(), location[0], location[1]);
+            if (related != null) {
+                for (ProductDto r : related) {
+                    if (recommendations.stream().noneMatch(rec -> rec.getId().equals(r.getId()))) {
+                        recommendations.add(r);
                     }
                 }
-            } catch (BusinessException e) {
-                // Only a domain-level "not available" is safe to skip. Swallowing
-                // anything else -- or swallowing a nested @Transactional
-                // failure -- poisons this method's own transaction and
-                // resurfaces as UnexpectedRollbackException at commit.
-                log.debug("Skipping related products for wishlist item {}: {}", p.getId(), e.getMessage());
             }
         }
         return recommendations.stream().limit(6).collect(Collectors.toList());
@@ -138,22 +133,15 @@ public class WishlistServiceImpl implements WishlistService {
     }
 
     /**
-     * ⚠️ CAVEAT: never swallow an exception raised INSIDE a nested
-     * @Transactional call joining the caller's transaction -- Spring marks the
-     * shared transaction rollback-only and the swallowed failure resurfaces as
-     * UnexpectedRollbackException at commit, long after this catch block.
-     * ProductCatalogServiceImpl.getProductById signals "not found" as data
-     * (Optional lookup) rather than as a failed nested transaction.
+     * ⚠️ No try/catch on purpose, and don't add one. It uses the non-throwing
+     * {@code findEligibleProductById} because a swallowed exception raised
+     * inside a nested {@code @Transactional} method still marks the caller's
+     * shared transaction rollback-only, resurfacing at commit as
+     * {@code UnexpectedRollbackException}.
      */
     private ProductDto safeGetProduct(UUID productId, double[] location) {
-        try {
-            return productCatalogService.getProductById(productId, location[0], location[1]);
-        } catch (BusinessException e) {
-            log.debug("Skipping unavailable product {} in wishlist mapping: {}", productId, e.getMessage());
-            return null;
-        } catch (Exception e) {
-            log.warn("Unexpected failure resolving product {} for wishlist mapping", productId, e);
-            throw e;
-        }
+        return productCatalogService
+                .findEligibleProductById(productId, location[0], location[1])
+                .orElse(null);
     }
 }
