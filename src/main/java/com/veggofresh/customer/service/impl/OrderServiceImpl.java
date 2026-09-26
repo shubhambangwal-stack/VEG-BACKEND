@@ -682,11 +682,17 @@ public class OrderServiceImpl implements OrderService {
      * not-found/not-eligible (always has, before and after the catalog
      * pivot). Wrapping it here restores the graceful per-item skip several
      * `if (product != null)` checks in this class visually intended.
+     *
+     * ⚠️ CAVEAT: only a domain-level BusinessException is safe to swallow
+     * here. Swallowing anything else -- or swallowing a nested @Transactional
+     * failure, which silently marks the shared transaction rollback-only --
+     * turns into UnexpectedRollbackException at commit instead.
      */
     private ProductDto safeGetProduct(UUID productId, double latitude, double longitude) {
         try {
             return productCatalogService.getProductById(productId, latitude, longitude);
-        } catch (Exception e) {
+        } catch (BusinessException e) {
+            log.debug("Skipping unavailable product {} in order mapping: {}", productId, e.getMessage());
             return null;
         }
     }

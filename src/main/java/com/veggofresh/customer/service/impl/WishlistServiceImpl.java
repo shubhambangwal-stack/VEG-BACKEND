@@ -10,6 +10,7 @@ import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
  * the whole list. Now wrapped with safeGetProduct() so it's actually
  * reachable and does what it always visually intended to do.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -84,8 +86,12 @@ public class WishlistServiceImpl implements WishlistService {
                         }
                     }
                 }
-            } catch (Exception e) {
-                // Ignore errors
+            } catch (BusinessException e) {
+                // Only a domain-level "not available" is safe to skip. Swallowing
+                // anything else -- or swallowing a nested @Transactional
+                // failure -- poisons this method's own transaction and
+                // resurfaces as UnexpectedRollbackException at commit.
+                log.debug("Skipping related products for wishlist item {}: {}", p.getId(), e.getMessage());
             }
         }
         return recommendations.stream().limit(6).collect(Collectors.toList());
@@ -131,11 +137,23 @@ public class WishlistServiceImpl implements WishlistService {
         return new double[]{reference.getLatitude(), reference.getLongitude()};
     }
 
+    /**
+     * ⚠️ CAVEAT: never swallow an exception raised INSIDE a nested
+     * @Transactional call joining the caller's transaction -- Spring marks the
+     * shared transaction rollback-only and the swallowed failure resurfaces as
+     * UnexpectedRollbackException at commit, long after this catch block.
+     * ProductCatalogServiceImpl.getProductById signals "not found" as data
+     * (Optional lookup) rather than as a failed nested transaction.
+     */
     private ProductDto safeGetProduct(UUID productId, double[] location) {
         try {
             return productCatalogService.getProductById(productId, location[0], location[1]);
-        } catch (Exception e) {
+        } catch (BusinessException e) {
+            log.debug("Skipping unavailable product {} in wishlist mapping: {}", productId, e.getMessage());
             return null;
+        } catch (Exception e) {
+            log.warn("Unexpected failure resolving product {} for wishlist mapping", productId, e);
+            throw e;
         }
     }
 }

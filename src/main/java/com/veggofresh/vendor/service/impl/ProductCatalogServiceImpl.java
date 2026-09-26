@@ -142,12 +142,17 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     @Override
     @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
     public ProductDto getProductById(UUID catalogProductId, double latitude, double longitude) {
-        ProductResponseDto product;
-        try {
-            product = adminProductService.getProductById(catalogProductId);
-        } catch (Exception e) {
-            throw new BusinessException("PRODUCT_NOT_FOUND", "Product not found");
-        }
+        // Must use the Optional-returning lookup, NOT getProductById inside a
+        // try/catch. AdminProductServiceImpl is @Transactional and joins the
+        // CALLER's transaction, so a RuntimeException escaping it makes Spring
+        // mark that shared transaction rollback-only -- and no noRollbackFor on
+        // this method can un-poison it. A caller that swallows our
+        // BusinessException (CartServiceImpl.safeGetProduct) would then hit
+        // UnexpectedRollbackException at commit. Returning Optional lets the
+        // "not found" case be expressed as data, not as a failed nested
+        // transaction.
+        ProductResponseDto product = adminProductService.findProductById(catalogProductId)
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found"));
 
         if (!product.isActive()) {
             throw new BusinessException("PRODUCT_NOT_FOUND", "Product not found or inactive");
@@ -160,12 +165,10 @@ public class ProductCatalogServiceImpl implements ProductCatalogService {
     @Override
     @Transactional(readOnly = true)
     public List<ProductDto> getRelatedProducts(UUID catalogProductId, double latitude, double longitude) {
-        ProductResponseDto product;
-        try {
-            product = adminProductService.getProductById(catalogProductId);
-        } catch (Exception e) {
-            throw new BusinessException("PRODUCT_NOT_FOUND", "Product not found");
-        }
+        // Same reasoning as getProductById: no exception-swallowing around a
+        // nested @Transactional call, or this poisons the caller's transaction.
+        ProductResponseDto product = adminProductService.findProductById(catalogProductId)
+                .orElseThrow(() -> new BusinessException("PRODUCT_NOT_FOUND", "Product not found"));
 
         Page<ProductResponseDto> candidates = adminProductService.searchProducts(
                 null, null, product.getSubcategoryId(), PageRequest.of(0, OVERFETCH_SIZE));
