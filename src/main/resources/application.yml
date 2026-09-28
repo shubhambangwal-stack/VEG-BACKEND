@@ -65,7 +65,7 @@ spring:
 
 # ── Server ────────────────────────────────────────────────
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8085}
   servlet:
     context-path: /
   # Required when running behind a reverse proxy (Nginx).
