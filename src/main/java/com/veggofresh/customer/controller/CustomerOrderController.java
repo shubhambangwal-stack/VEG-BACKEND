@@ -156,11 +156,18 @@ public class CustomerOrderController {
         return ResponseEntity.ok(ApiResponse.success(invoice, "Invoice generated successfully"));
     }
 
-    /** PHASE 2 — response shape changed to a per-cart breakdown + grand total. */
+    /**
+     * PHASE 2 (updated) — preview for selected carts only.
+     * cartIds query param is optional (comma-separated UUIDs):
+     *   absent / empty → all open carts are summarised (old behaviour)
+     *   present       → only the listed carts are included in the preview
+     */
     @GetMapping("/checkout/summary")
     public ResponseEntity<ApiResponse<CheckoutSummaryDto>> getCheckoutSummary(
-            @RequestParam UUID addressId) {
-        CheckoutSummaryDto summary = orderService.getCheckoutSummary(SecurityUtils.getCurrentUserId(), addressId);
+            @RequestParam UUID addressId,
+            @RequestParam(required = false) List<UUID> cartIds) {
+        CheckoutSummaryDto summary = orderService.getCheckoutSummary(
+                SecurityUtils.getCurrentUserId(), addressId, cartIds);
         return ResponseEntity.ok(ApiResponse.success(summary, "Checkout summary retrieved successfully"));
     }
 

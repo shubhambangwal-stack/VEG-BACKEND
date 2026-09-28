@@ -139,8 +139,30 @@ public class OrderServiceImpl implements OrderService {
         List<CheckoutIssueDto> issues = new ArrayList<>();
         List<Order> placedOrders = new ArrayList<>();
 
+        // ── Selective checkout ──
+        // cartIds null/empty -> every open cart (backward compatible).
+        // cartIds non-empty  -> only those carts; the rest stay open and are
+        //                        neither ordered nor cleared below.
+        final List<UUID> requestedCartIds = (request.getCartIds() != null && !request.getCartIds().isEmpty())
+                ? request.getCartIds()
+                : null;
+
+        if (requestedCartIds != null && openCarts.stream().noneMatch(c -> requestedCartIds.contains(c.getId()))) {
+            throw new BusinessException("CART_NOT_FOUND",
+                    "None of the specified cart IDs were found in your open carts",
+                    HttpStatus.BAD_REQUEST);
+        }
+
         for (int i = 0; i < openCarts.size(); i++) {
             Cart cart = openCarts.get(i);
+
+            // Skip unselected carts WITHOUT consuming a label: "Cart N" must
+            // keep matching the cart screen, so checking out only Cart 2 still
+            // reports it as "Cart 2" rather than renumbering it to "Cart 1".
+            if (requestedCartIds != null && !requestedCartIds.contains(cart.getId())) {
+                continue;
+            }
+
             // One shared numbering, identical to the cart screen and to
             // getCheckoutSummary. Previously a local counter also advanced past
             // skipped carts, so a cart could be labelled "Cart 2" here and
@@ -183,10 +205,8 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // PAYMENT INTEGRATION: create a single Razorpay order (hold) covering all
-        // successfully checked-out orders. The frontend uses razorpayOrderId +
-        // razorpayKeyId
-        // to open Razorpay Checkout.js. After the user pays, they call
-        // POST /api/payment/orders/verify with the 3 values from Razorpay.
+        // successfully checked-out orders in this call. The frontend uses
+        // razorpayOrderId + razorpayKeyId to open Razorpay Checkout.js.
         List<UUID> orderIds = createdOrders.stream()
                 .map(OrderResponseDto::getId)
                 .collect(Collectors.toList());
@@ -199,8 +219,10 @@ public class OrderServiceImpl implements OrderService {
         // so they never outlive a rolled-back checkout.
         placedOrders.forEach(order -> notifyOrderPlaced(userId, order));
 
-        log.info("Checkout complete: {} order(s) created, {} cart(s) skipped, razorpay order={}, total={}",
-                createdOrders.size(), issues.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
+        log.info("Checkout complete: {} order(s) created (from {} cart(s) requested), razorpay order={}, total={}, {} cart(s) skipped",
+                createdOrders.size(),
+                requestedCartIds != null ? requestedCartIds.size() : "all",
+                paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount(), issues.size());
 
         return CheckoutResultDto.builder()
                 .orders(createdOrders)
@@ -772,7 +794,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId) {
+    public CheckoutSummaryDto getCheckoutSummary(UUID userId, UUID addressId, List<UUID> cartIds) {
         Address address = addressRepository.findByIdAndUserId(addressId, userId)
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
@@ -791,9 +813,25 @@ public class OrderServiceImpl implements OrderService {
         int totalItemCount = 0;
         BigDecimal grandTotal = BigDecimal.ZERO;
 
+        // Optional filtering: summarise only the requested carts.
+        // cartIds null/empty -> summarise every open cart (backward compatible).
+        // Labels still come from the cart's real position, so previewing a single
+        // cart shows "Cart 2" and not "Cart 1" — the preview must agree with
+        // the cart screen and with checkout.
+        final boolean onlyRequested = cartIds != null && !cartIds.isEmpty();
+        if (onlyRequested && carts.stream().noneMatch(c -> cartIds.contains(c.getId()))) {
+            throw new BusinessException("CART_NOT_FOUND",
+                    "None of the specified cart IDs were found in your open carts",
+                    HttpStatus.BAD_REQUEST);
+        }
+
         for (int i = 0; i < carts.size(); i++) {
             Cart cart = carts.get(i);
             String cartLabel = CartServiceImpl.cartLabel(i);
+
+            if (onlyRequested && !cartIds.contains(cart.getId())) {
+                continue;
+            }
 
             // Same two exclusions checkout() applies, evaluated up front so the
             // summary shows what will ACTUALLY be charged. A summary that
@@ -854,6 +892,14 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if (breakdowns.isEmpty()) {
+            // Distinguish "you asked for carts that aren't here" from "the carts
+            // you have can't ship here" — the first is a client error, the second
+            // is a catalog/address problem, and they need different fixes.
+            if (onlyRequested) {
+                throw new BusinessException("CART_NOT_FOUND",
+                        "None of the specified cart IDs were found in your open carts",
+                        HttpStatus.BAD_REQUEST);
+            }
             throw new BusinessException("CART_EMPTY",
                     "None of your carts can be delivered to this address right now", HttpStatus.BAD_REQUEST);
         }

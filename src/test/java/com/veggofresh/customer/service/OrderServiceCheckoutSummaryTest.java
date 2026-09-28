@@ -120,9 +120,15 @@ class OrderServiceCheckoutSummaryTest {
         return constructor.newInstance(args);
     }
 
+    /** Previews every open cart — the cartIds argument is null/empty. */
     private CheckoutSummaryDto summary() {
-        return (CheckoutSummaryDto) invoke("getCheckoutSummary", new Class<?>[] { UUID.class, UUID.class },
-                userId, address.getId());
+        return (CheckoutSummaryDto) invoke("getCheckoutSummary",
+                new Class<?>[] { UUID.class, UUID.class, List.class }, userId, address.getId(), null);
+    }
+
+    private CheckoutSummaryDto summaryOf(List<UUID> cartIds) {
+        return (CheckoutSummaryDto) invoke("getCheckoutSummary",
+                new Class<?>[] { UUID.class, UUID.class, List.class }, userId, address.getId(), cartIds);
     }
 
     /**
@@ -411,5 +417,53 @@ class OrderServiceCheckoutSummaryTest {
 
         BusinessException ex = assertThrows(BusinessException.class, this::summary);
         assertEquals("CART_EMPTY", ex.getErrorCode());
+    }
+
+    // ── selective checkout (cartIds, from e8ba06c) ─────────────────────────
+
+    @Test
+    @DisplayName("Previewing a subset of carts summarises only those carts")
+    void cartIdsRestrictsThePreviewToThatSubset() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        stubProduct(first, new BigDecimal("50"), Set.of(UUID.randomUUID()));
+        stubProduct(second, new BigDecimal("30"), Set.of(UUID.randomUUID()));
+        Cart cartOne = givenOpenCart(new int[] { 1 }, first);
+        Cart cartTwo = givenOpenCart(new int[] { 1 }, second);
+
+        CheckoutSummaryDto summary = summaryOf(List.of(cartTwo.getId()));
+
+        assertEquals(1, summary.getCarts().size(), "only the requested cart is previewed");
+        assertEquals(cartTwo.getId(), summary.getCarts().get(0).getCartId());
+    }
+
+    @Test
+    @DisplayName("A preview of one cart keeps that cart's real label, so it matches the cart screen")
+    void cartIdsDoNotRenumberThePreview() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        stubProduct(first, new BigDecimal("50"), Set.of(UUID.randomUUID()));
+        stubProduct(second, new BigDecimal("30"), Set.of(UUID.randomUUID()));
+        givenOpenCart(new int[] { 1 }, first);
+        Cart cartTwo = givenOpenCart(new int[] { 1 }, second);
+
+        // The SECOND cart, previewed on its own, must still be "Cart 2". If the
+        // subset were renumbered to 1..k the client would show a different label
+        // from the cart screen and from what checkout reports back.
+        CheckoutSummaryDto summary = summaryOf(List.of(cartTwo.getId()));
+
+        assertEquals("Cart 2", summary.getCarts().get(0).getCartLabel());
+    }
+
+    @Test
+    @DisplayName("Previewing cart IDs the customer does not own is an error, not a silent empty total")
+    void unknownCartIdsAreRejected() {
+        stubProduct(UUID.randomUUID(), new BigDecimal("50"), Set.of(UUID.randomUUID()));
+        givenOpenCart(new int[] { 1 }, UUID.randomUUID());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> summaryOf(List.of(UUID.randomUUID())));
+
+        assertEquals("CART_NOT_FOUND", ex.getErrorCode());
     }
 }

@@ -4,15 +4,20 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
- * PHASE 2 — one checkout call now processes ALL of the customer's open
- * carts at once, producing one Order per cart that still validates cleanly
- * (PROJECT_STATE section 2). There is deliberately no cartId field here:
- * checkout is all-or-nothing-per-cart across the whole basket, not a
- * per-cart action. Address/payment/slot apply uniformly to every resulting
- * order from this checkout.
+ * PHASE 2 (updated) — selective multi-cart checkout.
+ *
+ * {@code cartIds} is optional:
+ *  - When provided (non-null, non-empty): only the listed carts are checked
+ *    out in this call. The customer can place an order for Cart 1 alone,
+ *    leaving Cart 2 open for a separate checkout later.
+ *  - When null or empty: ALL of the customer's open carts are processed
+ *    (original Phase-2 all-carts behaviour — preserved for backward compat).
+ *
+ * Address/payment/slot apply uniformly to every cart included in this call.
  */
 @Getter
 @Setter
@@ -20,6 +25,13 @@ public class OrderRequestDto {
 
     @NotNull(message = "Address ID is required")
     private UUID addressId;
+
+    /**
+     * Optional — specific cart IDs to check out.
+     * Null or empty → all open carts (old behaviour).
+     * Non-empty     → only the listed carts; others stay open.
+     */
+    private List<UUID> cartIds;
 
     /** Payment method label — e.g. "COD", "UPI", "ONLINE", "WALLET" */
     private String paymentMethodId;

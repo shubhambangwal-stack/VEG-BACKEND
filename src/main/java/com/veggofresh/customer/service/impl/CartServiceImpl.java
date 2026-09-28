@@ -156,14 +156,21 @@ public class CartServiceImpl implements CartService {
 
     @Override
     public List<CartResponseDto> updateCartItem(UUID userId, UUID cartItemId, int quantity) {
-        int safeQuantity = requirePositiveQuantity(quantity,
-                "Quantity must be at least 1. Use DELETE /api/customer/carts/items/{id} to remove an item.");
+        // Quantity 0 (or below) means "remove this line". Preserved from
+        // 51cf525: a client decrementing a line to zero expects the line to go
+        // away, and a stored zero-quantity row would otherwise sit in the cart
+        // forever — priced at nothing and impossible to check out. Delegating
+        // to removeCartItem also means the emptied-cart retirement and the
+        // vendor re-sync below happen through one path, not two.
+        if (quantity <= 0) {
+            return removeCartItem(userId, cartItemId);
+        }
 
         CartItem item = cartItemRepository.findByIdAndCart_UserId(cartItemId, userId)
                 .orElseThrow(() -> new BusinessException("CART_ITEM_NOT_FOUND", "Item not found in your cart",
                         HttpStatus.NOT_FOUND));
 
-        item.setQuantity(safeQuantity);
+        item.setQuantity(quantity);
         cartItemRepository.save(item);
 
         Cart cart = item.getCart();
@@ -192,6 +199,9 @@ public class CartServiceImpl implements CartService {
         // would then open a needless extra cart. Re-deriving can only widen the
         // set, so it can never make cart selection worse, and it keeps the
         // stored set equal to the live truth (Cart's class javadoc).
+        //
+        // retireIfEmptied() below still closes the cart when the last line goes,
+        // so a ghost is never left open.
         CartVendorResolver.Session vendors = newSessionFor(cart.getUserId());
         vendors.resync(cart);
         recomputePromo(cart, vendors);

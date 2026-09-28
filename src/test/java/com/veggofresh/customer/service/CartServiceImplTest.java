@@ -149,6 +149,9 @@ class CartServiceImplTest {
             item.setProductId(productIds[i]);
             item.setQuantity(quantities[i]);
             cart.getItems().add(item);
+            // So that removal-style tests can act on a line without each one
+            // re-stubbing the ownership check.
+            when(cartItemRepository.findByIdAndCart_UserId(item.getId(), userId)).thenReturn(Optional.of(item));
         }
         openCarts.add(cart);
         return cart;
@@ -383,13 +386,30 @@ class CartServiceImplTest {
     }
 
     @Test
-    @DisplayName("Updating to zero or a negative quantity is rejected rather than corrupting totals")
-    void updateRejectsNonPositiveQuantity() {
-        assertThrows(BusinessException.class,
-                () -> cartService.updateCartItem(userId, UUID.randomUUID(), 0));
-        assertThrows(BusinessException.class,
-                () -> cartService.updateCartItem(userId, UUID.randomUUID(), -1));
-        verify(cartItemRepository, never()).findByIdAndCart_UserId(any(), any());
+    @DisplayName("Setting quantity to zero or below removes the line instead of storing a zero row")
+    void updateToNonPositiveQuantityRemovesTheLine() {
+        UUID productA = UUID.randomUUID();
+        UUID productB = UUID.randomUUID();
+        stubProduct(productA, new BigDecimal("10"), Set.of(UUID.randomUUID()));
+        stubProduct(productB, new BigDecimal("10"), Set.of(UUID.randomUUID()));
+        Cart cart = givenOpenCart(new int[] { 2, 1 }, productA, productB);
+
+        cartService.updateCartItem(userId, cart.getItems().get(0).getId(), 0);
+
+        verify(cartItemRepository).delete(any(CartItem.class));
+        assertFalse(cart.isDeleted(), "the cart still holds another line, so it stays open");
+    }
+
+    @Test
+    @DisplayName("Dropping the last line to zero retires the whole cart rather than leaving a ghost")
+    void updateLastItemToZeroRetiresCart() {
+        UUID productA = UUID.randomUUID();
+        stubProduct(productA, new BigDecimal("10"), Set.of(UUID.randomUUID()));
+        Cart cart = givenOpenCart(new int[] { 1 }, productA);
+
+        cartService.updateCartItem(userId, cart.getItems().get(0).getId(), 0);
+
+        assertTrue(cart.isDeleted(), "no ghost cart may be left open");
     }
 
     @Test

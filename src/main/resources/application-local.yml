@@ -9,7 +9,8 @@ spring:
     url: jdbc:postgresql://localhost:5432/veggofresh_local
     username: postgres
     password: postgres
-    driver-class-name: org.postgresql.Driver     # ← Add this line (Very Important)
+    driver-class-name: org.postgresql.Driver
+    #hvnbnbvn bvbvnbvnbvnbc# ← Add this line (Very Important)
 
   jpa:
     hibernate:
