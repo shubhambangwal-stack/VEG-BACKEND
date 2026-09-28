@@ -52,7 +52,10 @@ public class CustomerOrderController {
     @PostMapping("/verify-payment")
     public ResponseEntity<ApiResponse<String>> verifyPayment(
             @Valid @RequestBody VerifyPaymentRequestDto request) {
+        // From the security context, never from the request body -- see the
+        // ownership check in PaymentServiceImpl.verifyPayment.
         paymentService.verifyPayment(
+                SecurityUtils.getCurrentUserId(),
                 request.getRazorpayOrderId(),
                 request.getRazorpayPaymentId(),
                 request.getRazorpaySignature()

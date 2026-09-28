@@ -48,7 +48,11 @@ public class PaymentController {
     @PostMapping("/verify")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<ApiResponse<String>> verifyPayment(@Valid @RequestBody VerifyPaymentRequestDto request) {
+        // From the security context, never from the request body: the ownership
+        // check in PaymentServiceImpl compares against this, so a client-supplied
+        // userId would defeat it.
         paymentService.verifyPayment(
+                SecurityUtils.getCurrentUserId(),
                 request.getRazorpayOrderId(),
                 request.getRazorpayPaymentId(),
                 request.getRazorpaySignature()

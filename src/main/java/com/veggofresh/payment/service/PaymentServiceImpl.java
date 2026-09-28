@@ -143,7 +143,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public void verifyPayment(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
+    public void verifyPayment(UUID userId, String razorpayOrderId, String razorpayPaymentId, String razorpaySignature) {
         // 1. Verify HMAC-SHA256 signature (Razorpay Checkout.js convention)
         boolean signatureValid = razorpayClient.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId,
                 razorpaySignature);
@@ -164,6 +164,20 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentOrder paymentOrder = paymentOrderRepository.findByRazorpayOrderId(razorpayOrderId)
                 .orElseThrow(() -> new BusinessException("PAYMENT_ORDER_NOT_FOUND",
                         "No payment order found for razorpayOrderId: " + razorpayOrderId, HttpStatus.NOT_FOUND));
+
+        // Ownership check. The sibling getPaymentStatus() already scopes its
+        // lookup to the requesting user, so the absence here was an inconsistency
+        // rather than a design choice: the HMAC check above proves the caller
+        // holds the secret key, NOT that the payment belongs to them. Any
+        // authenticated customer who learned or guessed another customer's
+        // razorpayOrderId could drive that order into AUTHORIZED. The ids are
+        // sequential and not treated as secrets anywhere.
+        if (!paymentOrder.getUserId().equals(userId)) {
+            log.warn("verifyPayment: userId={} attempted to authorize paymentOrderId={} owned by userId={}",
+                    userId, paymentOrder.getId(), paymentOrder.getUserId());
+            throw new BusinessException("PAYMENT_ORDER_NOT_FOUND",
+                    "No payment order found for razorpayOrderId: " + razorpayOrderId, HttpStatus.NOT_FOUND);
+        }
 
         if (paymentOrder.getStatus().isTerminal()) {
             log.warn("verifyPayment called on already-terminal PaymentOrder {} (status={}), ignoring",

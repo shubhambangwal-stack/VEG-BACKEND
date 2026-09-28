@@ -6,8 +6,6 @@ import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.service.OrderService;
 import com.veggofresh.payment.service.PaymentService;
-import com.veggofresh.payment.service.WalletService;
-import com.veggofresh.payment.service.WalletTransactionReason;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,9 +21,10 @@ import java.util.List;
  * nothing reads it; only Delivery has a @Scheduled sweep".
  *
  * Runs every 30 seconds. Finds PLACED orders whose {@code createdAt} is older
- * than Admin's configured {@code vendorAcceptTimeoutSeconds}. For each, calls
- * PaymentService.onOrderCancelled() (which decides void vs wallet refund based
- * on payment state) and then cancels the order.
+ * than Admin's configured {@code vendorAcceptTimeoutSeconds}. For each, cancels
+ * the order and calls PaymentService.onOrderCancelled(), which decides between
+ * voiding the payment line and refunding it based on whether money was actually
+ * captured. This service does not move money itself.
  *
  * Lives in the Customer module because it owns the {@link Order} entity and the
  * OrderRepository. Depends on Payment module for the cancel hook.
@@ -37,7 +36,7 @@ public class VendorAcceptTimeoutSweepService {
 
     private final OrderRepository orderRepository;
     private final PlatformSettingsService platformSettingsService;
-    private final WalletService walletService;
+    private final PaymentService paymentService;
 
     @Scheduled(fixedDelay = 30_000)
     @Transactional
@@ -57,8 +56,20 @@ public class VendorAcceptTimeoutSweepService {
                     order.setCancelledAt(Instant.now());
                     orderRepository.save(order);
 
-                    walletService.credit(order.getUserId(), order.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
-                            order.getId(), "Refund for timeout-cancelled order " + order.getOrderNumber());
+                    // Delegate the money to the payment module, exactly as the
+                    // customer-initiated cancel path does. This method used to
+                    // credit the order total unconditionally, which meant an
+                    // order whose payment hold was never captured still paid the
+                    // customer a full refund in wallet credit -- free money for
+                    // anyone who simply let an order time out. onOrderCancelled()
+                    // voids the line when nothing was captured and refunds only
+                    // when it was.
+                    //
+                    // The class javadoc above already described this call as the
+                    // behaviour; the PaymentService import was present but never
+                    // wired to a field, so the intent was documented and the
+                    // implementation was lost.
+                    paymentService.onOrderCancelled(order.getId());
 
                     log.warn("Order {} timed out waiting for vendor accept -- cancelled", order.getId());
                 } catch (Exception e) {

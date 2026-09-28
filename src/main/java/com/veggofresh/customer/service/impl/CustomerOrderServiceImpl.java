@@ -12,8 +12,6 @@ import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.payment.service.PaymentService;
-import com.veggofresh.payment.service.WalletService;
-import com.veggofresh.payment.service.WalletTransactionReason;
 import com.veggofresh.platform.exception.BusinessException;
 import com.veggofresh.vendor.service.ShopLookupService;
 
@@ -53,7 +51,6 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
     private final OrderResponseMapper orderResponseMapper;
-    private final WalletService walletService;
     private final PaymentService paymentService;
     private final PlatformSettingsService platformSettingsService;
     private final NotificationService notificationService;
@@ -219,8 +216,12 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
                 "Order " + saved.getOrderNumber() + " could not be fulfilled — " + reason,
                 orderData(saved));
 
-        walletService.credit(saved.getUserId(), saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
-                saved.getId(), reason);
+        // Same rule as OrderServiceImpl.cancelOrder(): the payment module owns the
+        // money, because only it knows whether the hold was captured. This used to
+        // credit saved.getTotalAmount() unconditionally, which paid out a full
+        // refund for orders that were never charged, and double-refunded the ones
+        // that were.
+        paymentService.onOrderCancelled(saved.getId());
     }
 
     private String orderData(Order order) {

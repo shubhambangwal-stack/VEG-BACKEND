@@ -38,7 +38,14 @@ public interface PaymentService {
      * @param razorpayPaymentId the payment id from Razorpay's Checkout.js callback
      * @param razorpaySignature the HMAC-SHA256 signature from Razorpay's callback
      */
-    void verifyPayment(String razorpayOrderId, String razorpayPaymentId, String razorpaySignature);
+    /**
+     * @param userId the authenticated caller; the payment must belong to them.
+     *               The HMAC signature proves the caller holds the gateway
+     *               secret, not that the payment is theirs, so ownership is
+     *               checked separately. Not propagated from any client-supplied
+     *               field.
+     */
+    void verifyPayment(UUID userId, String razorpayOrderId, String razorpayPaymentId, String razorpaySignature);
 
     /**
      * Called when a vendor accepts one of the orders in the batch. Marks the

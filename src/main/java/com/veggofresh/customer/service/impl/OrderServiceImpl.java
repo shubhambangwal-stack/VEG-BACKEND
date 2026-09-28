@@ -673,14 +673,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * WALLET WIRING (this round): a cancelled order now actually refunds the
-     * customer -- order.getTotalAmount() is credited to their wallet. This applies
-     * regardless of whether real payment collection exists yet (it doesn't --
-     * Payment/
-     * Razorpay integration is still unbuilt) so that the wallet ledger is already
-     * correct and ready the moment checkout starts taking real payments. See
-     * NOTES_CUSTOMER.md and Payment module's NOTES_PAYMENT.md for the full
-     * reasoning.
+     * Cancels an order and hands the money question to the payment module.
+     *
+     * <p>The refund is NOT credited here. That comment used to sit on a
+     * {@code walletService.credit(order.getTotalAmount(), ...)} call whose stated
+     * rationale was that "real payment collection does not exist yet", so a refund
+     * was booked unconditionally. Razorpay integration now does exist, and
+     * {@link PaymentService#onOrderCancelled(UUID)} distinguishes an uncaptured
+     * hold (void it, nothing to refund) from a captured one (refund it) using the
+     * payment line as the source of truth. Booking the credit here as well
+     * double-refunded every paid cancellation and paid out free wallet credit for
+     * every unpaid one.
      */
     @Override
     public OrderResponseDto cancelOrder(UUID userId, UUID orderId) {
@@ -702,9 +705,26 @@ public class OrderServiceImpl implements OrderService {
                 "Order " + saved.getOrderNumber() + " was cancelled — your refund is on the way",
                 orderData(saved));
 
-        walletService.credit(userId, saved.getTotalAmount(), WalletTransactionReason.ORDER_CANCELLED_REFUND,
-                saved.getId(), "Refund for cancelled order " + saved.getOrderNumber());
-
+        // The refund belongs to the payment module and nowhere else.
+        // PaymentService.onOrderCancelled() is the only party that knows whether
+        // money was actually collected: it voids the line when the batch was
+        // never captured (no money in, so nothing to give back) and credits a
+        // refund only when it was.
+        //
+        // This method used to ALSO credit the order total unconditionally, before
+        // calling onOrderCancelled(). Two consequences, both real money:
+        //
+        //   - a cancelled COD or wallet-paid order, where no money was ever
+        //     captured, still credited the customer's wallet with the order
+        //     total -- free money, repeatable per cancellation;
+        //   - a cancelled online-paid order was credited twice, once here and
+        //     once from the post-capture branch of onOrderCancelled(). Checkout
+        //     fans one payment hold out over N orders, so cancelling all three
+        //     of a 3-cart order returned six refunds for three orders.
+        //
+        // Note the order status is still saved as CANCELLED above, before the
+        // payment module is consulted, so a webhook arriving for this order
+        // afterwards still resolves against a cancelled order.
         paymentService.onOrderCancelled(orderId);
 
         return orderResponseMapper.mapToDto(saved);
