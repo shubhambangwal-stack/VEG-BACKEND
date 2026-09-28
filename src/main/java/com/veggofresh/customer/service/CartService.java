@@ -10,13 +10,21 @@ import java.util.UUID;
 /**
  * PHASE 2 — NEW ARCHITECTURE, multi-cart model (PROJECT_STATE section 2).
  *
- * A customer can have several concurrent OPEN carts. Adding an item checks
- * existing open carts in creation order for vendor overlap with the new
- * item: overlap found -> item joins that cart, narrowing its candidate-
- * vendor-set to the intersection; no overlap with any existing cart -> a
- * new cart is created with its own fresh candidate-vendor-set. Carts are
- * static once formed (no recompute/re-merge on item removal — confirmed
- * simplification).
+ * A customer can have several concurrent OPEN carts. Each cart tracks the
+ * set of vendors able to fulfil ALL of its items at once (its candidate-vendor
+ * set). Adding an item picks the cart that maximises vendor overlap with that
+ * item — best-fit, not first-fit, so an item never gets stranded in a worse
+ * cart just because that cart was created earlier. If no existing cart can
+ * share a vendor with the item, a new cart is created.
+ *
+ * Two invariants this service guarantees:
+ * <ul>
+ *   <li>The candidate-vendor set is re-derived from the cart's items after
+ *       every add, quantity change and removal, so it is never stale.</li>
+ *   <li>A cart that is emptied is soft-deleted rather than left open, and
+ *       empty carts are never returned. An open-but-empty cart used to be
+ *       listed and labelled, which made two real carts appear as three.</li>
+ * </ul>
  *
  * BREAKING CHANGE from Phase 1: every mutating method now returns the FULL
  * list of the user's open carts, not a single cart, since one call can

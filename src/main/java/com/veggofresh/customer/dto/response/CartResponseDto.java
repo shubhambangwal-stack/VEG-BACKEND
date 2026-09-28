@@ -25,10 +25,26 @@ public class CartResponseDto {
     /** Display label while shopping, e.g. "Cart 1" — derived from creation order. */
     private String cartLabel;
     private List<CartItemResponseDto> items;
+    /** Sum of the prices of every currently purchasable line item, before fees. */
     private BigDecimal totalAmount;
+    /**
+     * Sum of line-item QUANTITIES among purchasable items — the same number the
+     * badge reports. Not the number of line items: those disagree constantly
+     * (2 lines at qty 2 and 5 is 2 lines but 7 items) and were the reason a
+     * cart screen and its checkout summary showed different counts.
+     */
     private int itemCount;
     private BigDecimal deliveryFee;
     private BigDecimal estimatedTax;
+    /** totalAmount + deliveryFee + estimatedTax - promoDiscount, floored at zero. */
+    private BigDecimal payableAmount;
     private String promoCode;
     private BigDecimal promoDiscount;
+    /**
+     * Line items left in the cart whose product is no longer available. These
+     * contribute to neither {@link #itemCount} nor {@link #totalAmount}, so the
+     * client can explain to the customer why the count is lower than the number
+     * of rows it is rendering, and offer to remove them.
+     */
+    private int unavailableItemCount;
 }

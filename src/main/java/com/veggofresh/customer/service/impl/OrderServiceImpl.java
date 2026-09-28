@@ -34,6 +34,7 @@ import com.veggofresh.customer.repository.OrderItemRepository;
 import com.veggofresh.customer.repository.OrderRepository;
 import com.veggofresh.customer.repository.RatingRepository;
 import com.veggofresh.customer.service.CartService;
+import com.veggofresh.customer.service.CartVendorResolver;
 import com.veggofresh.customer.service.OrderService;
 import com.veggofresh.notification.entity.NotificationRecipientRole;
 import com.veggofresh.notification.entity.NotificationType;
@@ -87,6 +88,17 @@ import java.util.stream.Collectors;
 @Transactional
 public class OrderServiceImpl implements OrderService {
 
+    /**
+     * Order numbers are derived from a random draw, so a single shared
+     * {@link Random} is used rather than allocating one per order. The instance
+     * is not thread-safe; it is guarded so concurrent checkouts cannot corrupt
+     * its internal state (a plain {@code new Random()} per call was also
+     * reseeded from the clock on every order, which made collisions likelier
+     * under load, not less).
+     */
+    private static final Random ORDER_NUMBER_RANDOM = new Random();
+    private static final Object ORDER_NUMBER_LOCK = new Object();
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final CartRepository cartRepository;
@@ -103,17 +115,18 @@ public class OrderServiceImpl implements OrderService {
     private final NotificationService notificationService;
     private final ShopLookupService shopLookupService;
     private final PlatformSettingsService platformSettingsService;
+    private final CartVendorResolver cartVendorResolver;
 
     @Override
     public CheckoutResultDto checkout(UUID userId, OrderRequestDto request) {
-        List<Cart> openCarts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
-        if (openCarts.isEmpty()) {
-            throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
-        }
-
         Address address = addressRepository.findByIdAndUserId(request.getAddressId(), userId)
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
+
+        List<Cart> openCarts = shoppableCarts(userId);
+        if (openCarts.isEmpty()) {
+            throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
+        }
 
         DeliverySlot slot = null;
         if (request.getDeliverySlotId() != null) {
@@ -125,46 +138,43 @@ public class OrderServiceImpl implements OrderService {
         List<OrderResponseDto> createdOrders = new ArrayList<>();
         List<CheckoutIssueDto> issues = new ArrayList<>();
         List<Order> placedOrders = new ArrayList<>();
-        int cartIndex = 1;
 
-        for (Cart cart : openCarts) {
-            String cartLabel = "Cart " + cartIndex;
-
-            if (cart.getItems() == null || cart.getItems().isEmpty()) {
-                cartIndex++;
-                continue;
-            }
+        for (int i = 0; i < openCarts.size(); i++) {
+            Cart cart = openCarts.get(i);
+            // One shared numbering, identical to the cart screen and to
+            // getCheckoutSummary. Previously a local counter also advanced past
+            // skipped carts, so a cart could be labelled "Cart 2" here and
+            // "Cart 1" on the screen — and the client ties these together.
+            String cartLabel = CartServiceImpl.cartLabel(i);
 
             // Re-validate vendor overlap fresh at checkout time — a cart's
             // overlap may have broken since add-time even if untouched
             // (PROJECT_STATE section 2, "Revisit-after-a-delay edge case").
-            Set<UUID> liveIntersection = null;
-            for (CartItem item : cart.getItems()) {
-                Set<UUID> vendorsForItem = productCatalogService.getShopIdsForProduct(item.getProductId(),
-                        address.getLatitude(), address.getLongitude());
-                liveIntersection = (liveIntersection == null)
-                        ? new HashSet<>(vendorsForItem != null ? vendorsForItem : Set.of())
-                        : intersect(liveIntersection, vendorsForItem != null ? vendorsForItem : Set.of());
-            }
-
-            if (liveIntersection == null || liveIntersection.isEmpty()) {
-                issues.add(CheckoutIssueDto.builder()
-                        .cartId(cart.getId())
-                        .cartLabel(cartLabel)
-                        .reason("Some items in this group are no longer available together — remove them to continue, or we'll leave this group out of your order")
-                        .build());
-                cartIndex++;
+            CartVendorResolver.Session vendors = newVendorSession(address);
+            if (!vendors.revalidate(cart)) {
+                issues.add(issue(cart, cartLabel,
+                        "Some items in this group are no longer available together — remove them to continue, or we'll leave this group out of your order"));
                 continue;
             }
 
-            Order order = buildOrderFromCart(userId, cart, address, slot, request, liveIntersection);
+            // A cart can pass the overlap check and still have nothing buyable
+            // left (every product delisted or out of range). Building an order
+            // from it would charge a delivery fee and platform fee for zero
+            // items, so it is reported as an issue and skipped instead.
+            List<CartItem> shippable = vendors.onlyShippableItems(cart);
+            if (shippable.isEmpty()) {
+                issues.add(issue(cart, cartLabel,
+                        "None of the items in this group are available for delivery to this address — we'll leave this group out of your order"));
+                continue;
+            }
+
+            Order order = buildOrderFromCart(userId, cart, address, slot, request, vendors.effectiveVendorIds(cart),
+                    shippable);
             Order saved = orderRepository.save(order);
             createdOrders.add(orderResponseMapper.mapToDto(saved));
             placedOrders.add(saved);
 
             cartService.clearCart(userId, cart.getId());
-
-            cartIndex++;
         }
 
         if (createdOrders.isEmpty()) {
@@ -189,8 +199,8 @@ public class OrderServiceImpl implements OrderService {
         // so they never outlive a rolled-back checkout.
         placedOrders.forEach(order -> notifyOrderPlaced(userId, order));
 
-        log.info("Checkout complete: {} order(s) created, Razorpay order={}, total={}",
-                createdOrders.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
+        log.info("Checkout complete: {} order(s) created, {} cart(s) skipped, razorpay order={}, total={}",
+                createdOrders.size(), issues.size(), paymentHold.getRazorpayOrderId(), paymentHold.getTotalAmount());
 
         return CheckoutResultDto.builder()
                 .orders(createdOrders)
@@ -199,8 +209,32 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
+    private CheckoutIssueDto issue(Cart cart, String cartLabel, String reason) {
+        return CheckoutIssueDto.builder()
+                .cartId(cart.getId())
+                .cartLabel(cartLabel)
+                .reason(reason)
+                .build();
+    }
+
+    /**
+     * Open carts that still hold at least one item, oldest first. Empty carts
+     * are skipped so that they cannot consume a "Cart N" label and desync the
+     * numbering from the cart screen. Writers should have retired them already
+     * (see CartServiceImpl); this is the read-side guard.
+     */
+    private List<Cart> shoppableCarts(UUID userId) {
+        return cartRepository.findByUserIdOrderByCreatedAtAscIdAsc(userId).stream()
+                .filter(Cart::hasItems)
+                .collect(Collectors.toList());
+    }
+
+    private CartVendorResolver.Session newVendorSession(Address address) {
+        return cartVendorResolver.newSession(address.getLatitude(), address.getLongitude());
+    }
+
     private Order buildOrderFromCart(UUID userId, Cart cart, Address address, DeliverySlot slot,
-            OrderRequestDto request, Set<UUID> resolvedVendorIds) {
+            OrderRequestDto request, Set<UUID> resolvedVendorIds, List<CartItem> shippableItems) {
         Order order = new Order();
         order.setUserId(userId);
         order.setStatus(OrderStatus.PLACED);
@@ -208,19 +242,22 @@ public class OrderServiceImpl implements OrderService {
                 + " - " + address.getPostalCode());
         order.setLatitude(address.getLatitude());
         order.setLongitude(address.getLongitude());
-        order.setOrderNumber("#DM-" + (100000 + new Random().nextInt(900000)));
+        order.setOrderNumber(nextOrderNumber());
         order.setSourceCartId(cart.getId());
         order.setCandidateVendorIds(new HashSet<>(resolvedVendorIds));
 
         BigDecimal subtotal = BigDecimal.ZERO;
         List<OrderItem> orderItems = new ArrayList<>();
 
-        for (CartItem item : cart.getItems()) {
-            ProductDto product = productCatalogService.getProductById(item.getProductId(), address.getLatitude(),
-                    address.getLongitude());
-            if (product == null) {
-                throw new BusinessException("PRODUCT_NOT_FOUND",
-                        "One or more products in your cart are no longer available", HttpStatus.BAD_REQUEST);
+        // Only the shippable items are converted, and only for THIS cart. The
+        // previous version threw on the first unresolvable product, which
+        // propagated out of the whole checkout loop: one stale line in Cart 1
+        // used to abort checkout for Cart 2 and Cart 3 as well, and the
+        // customer got a 400 for carts that were perfectly fine.
+        for (CartItem item : shippableItems) {
+            ProductDto product = safeGetProduct(item.getProductId(), address.getLatitude(), address.getLongitude());
+            if (product == null || product.getPrice() == null) {
+                continue;
             }
 
             OrderItem orderItem = new OrderItem();
@@ -249,7 +286,8 @@ public class OrderServiceImpl implements OrderService {
         // of hardcoding zero. Previously CouponService was injected here but
         // never actually called — promoDiscount was always ZERO regardless
         // of what the customer had applied in the cart.
-        BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
+        BigDecimal promoDiscount = capAtSubtotal(
+                cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO, subtotal);
         order.setPromoCode(cart.getPromoCode());
 
         BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
@@ -259,15 +297,25 @@ public class OrderServiceImpl implements OrderService {
         order.setDeliveryFee(deliveryFee);
         order.setEstimatedTax(estimatedTax);
         order.setPromoDiscount(promoDiscount);
-        order.setTotalAmount(subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount));
+
+        BigDecimal total = subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount);
+        // This total is what the payment hold is created against. A negative
+        // amount here is unrecoverable downstream (a refund-direction hold), so
+        // it is floored at zero rather than trusted.
+        order.setTotalAmount(total.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : total);
 
         return order;
     }
 
-    private Set<UUID> intersect(Set<UUID> a, Set<UUID> b) {
-        Set<UUID> result = new HashSet<>(a);
-        result.retainAll(b);
-        return result;
+    /** A discount can never exceed what it discounts. */
+    private BigDecimal capAtSubtotal(BigDecimal discount, BigDecimal subtotal) {
+        return discount.compareTo(subtotal) > 0 ? subtotal : discount;
+    }
+
+    private String nextOrderNumber() {
+        synchronized (ORDER_NUMBER_LOCK) {
+            return "#DM-" + (100000 + ORDER_NUMBER_RANDOM.nextInt(900000));
+        }
     }
 
     @Override
@@ -629,7 +677,13 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ORDER_NOT_FOUND", "Original order not found",
                         HttpStatus.NOT_FOUND));
 
-        List<CartResponseDto> result = null;
+        if (order.getItems() == null || order.getItems().isEmpty()) {
+            throw new BusinessException("ORDER_EMPTY", "This order has no items to reorder", HttpStatus.BAD_REQUEST);
+        }
+
+        // The whole reorder is one transaction, so a product that has since
+        // become unbuyable rolls the entire re-add back rather than leaving the
+        // customer with a half-populated cart that looks like a bug.
         for (OrderItem item : order.getItems()) {
             ProductDto product = productCatalogService.getProductById(item.getProductId(), order.getLatitude(),
                     order.getLongitude());
@@ -641,9 +695,13 @@ public class OrderServiceImpl implements OrderService {
             CartItemRequestDto req = new CartItemRequestDto();
             req.setProductId(item.getProductId());
             req.setQuantity(item.getQuantity());
-            result = cartService.addItemToCart(userId, req);
+            cartService.addItemToCart(userId, req);
         }
-        return result;
+
+        // Previously this returned the result of the last addItemToCart call,
+        // which is null for an order with no items — the client received a null
+        // body inside a non-null ApiResponse wrapper.
+        return cartService.getOpenCarts(userId);
     }
 
     @Override
@@ -719,42 +777,70 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
 
-        List<Cart> carts = cartRepository.findByUserIdOrderByCreatedAtAsc(userId);
+        List<Cart> carts = shoppableCarts(userId);
         if (carts.isEmpty()) {
             throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
         }
 
+        CartVendorResolver.Session vendors = newVendorSession(address);
+        BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
+        BigDecimal estimatedTax = platformSettingsService.getPlatformFeeAmount();
+
         List<CartCheckoutBreakdownDto> breakdowns = new ArrayList<>();
+        List<CheckoutIssueDto> issues = new ArrayList<>();
         int totalItemCount = 0;
         BigDecimal grandTotal = BigDecimal.ZERO;
-        int index = 1;
 
-        for (Cart cart : carts) {
-            if (cart.getItems() == null || cart.getItems().isEmpty()) {
-                index++;
+        for (int i = 0; i < carts.size(); i++) {
+            Cart cart = carts.get(i);
+            String cartLabel = CartServiceImpl.cartLabel(i);
+
+            // Same two exclusions checkout() applies, evaluated up front so the
+            // summary shows what will ACTUALLY be charged. A summary that
+            // includes a cart checkout will then reject is worse than no
+            // summary: the customer confirms a total that is wrong on submit.
+            if (!vendors.revalidate(cart)) {
+                issues.add(issue(cart, cartLabel,
+                        "Some items in this group are no longer available together — this group will be left out of your order"));
+                continue;
+            }
+            List<CartItem> shippable = vendors.onlyShippableItems(cart);
+            if (shippable.isEmpty()) {
+                issues.add(issue(cart, cartLabel,
+                        "None of the items in this group are available for delivery to this address — this group will be left out of your order"));
                 continue;
             }
 
             BigDecimal subtotal = BigDecimal.ZERO;
-            int itemCount = cart.getItems().size();
+            int itemCount = 0;
+            int unavailableItemCount = 0;
             for (CartItem item : cart.getItems()) {
                 ProductDto product = safeGetProduct(item.getProductId(), address.getLatitude(), address.getLongitude());
-                if (product != null) {
-                    subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                if (product == null || product.getPrice() == null) {
+                    unavailableItemCount++;
+                    continue;
                 }
+                // Sum of QUANTITIES, not the number of line items. This is the
+                // value the cart screen and the badge already report; the
+                // mismatch is exactly what made a two-cart customer see one
+                // number on the cart page and a different one at checkout.
+                itemCount += item.getQuantity();
+                subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
             }
 
-            BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
-            BigDecimal platformFee = platformSettingsService.getPlatformFeeAmount();
-            BigDecimal estimatedTax = platformFee; // platform fee shown as tax line item
             // PHASE 1 FIX: read the cart's real promo instead of hardcoding zero.
-            BigDecimal promoDiscount = cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO;
+            BigDecimal promoDiscount = capAtSubtotal(
+                    cart.getPromoDiscount() != null ? cart.getPromoDiscount() : BigDecimal.ZERO, subtotal);
             BigDecimal total = subtotal.add(deliveryFee).add(estimatedTax).subtract(promoDiscount);
+            if (total.compareTo(BigDecimal.ZERO) < 0) {
+                total = BigDecimal.ZERO;
+            }
 
             breakdowns.add(CartCheckoutBreakdownDto.builder()
                     .cartId(cart.getId())
-                    .cartLabel("Cart " + index)
+                    .cartLabel(cartLabel)
                     .itemCount(itemCount)
+                    .unavailableItemCount(unavailableItemCount)
                     .subtotal(subtotal)
                     .deliveryFee(deliveryFee)
                     .estimatedTax(estimatedTax)
@@ -765,13 +851,18 @@ public class OrderServiceImpl implements OrderService {
 
             totalItemCount += itemCount;
             grandTotal = grandTotal.add(total);
-            index++;
+        }
+
+        if (breakdowns.isEmpty()) {
+            throw new BusinessException("CART_EMPTY",
+                    "None of your carts can be delivered to this address right now", HttpStatus.BAD_REQUEST);
         }
 
         return CheckoutSummaryDto.builder()
                 .carts(breakdowns)
                 .totalItemCount(totalItemCount)
                 .grandTotal(grandTotal)
+                .issues(issues)
                 .build();
     }
 

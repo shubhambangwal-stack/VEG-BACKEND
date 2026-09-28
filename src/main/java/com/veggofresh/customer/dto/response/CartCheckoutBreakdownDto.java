@@ -15,8 +15,17 @@ import java.util.UUID;
 @AllArgsConstructor
 public class CartCheckoutBreakdownDto {
     private UUID cartId;
+    /** Matches the cartLabel on the cart screen for the same cartId. */
     private String cartLabel;
+    /**
+     * Sum of line-item QUANTITIES that are still purchasable — identical to
+     * {@code CartResponseDto.itemCount} for this cart. Previously this was
+     * {@code getItems().size()}, i.e. the number of distinct line items, so a
+     * cart of 2 lines at qty 2 and 5 read as 2 here and 7 on the cart screen.
+     */
     private int itemCount;
+    /** Line items in this cart that are no longer purchasable, and are not counted above. */
+    private int unavailableItemCount;
     private BigDecimal subtotal;
     private BigDecimal deliveryFee;
     private BigDecimal estimatedTax;
