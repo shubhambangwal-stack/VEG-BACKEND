@@ -280,7 +280,7 @@ class OrderServiceCheckoutSummaryTest {
     }
 
     @Test
-    @DisplayName("Unavailable lines are excluded from the count and the subtotal, and reported")
+    @DisplayName("A cart that is wholly unavailable is omitted from the summary, like it is from the cart screen")
     void unavailableLinesAreExcludedAndReported() {
         UUID dead = UUID.randomUUID();
         UUID healthy = UUID.randomUUID();
@@ -291,9 +291,16 @@ class OrderServiceCheckoutSummaryTest {
 
         CheckoutSummaryDto summary = summary();
 
-        assertEquals(1, summary.getIssues().size(), "the wholly unavailable cart is reported");
+        // The dead cart is not listed AND not reported. It is invisible on the
+        // cart screen too, so raising an issue about a cart the customer cannot
+        // see would leave them nothing to act on -- and numbering the healthy
+        // cart from a list the customer cannot see is the label desync this
+        // whole change exists to prevent. Carts that are visible but cannot ship
+        // as one order are still reported; see brokenOverlapIsReportedNotCharged.
+        assertEquals(1, summary.getCarts().size(), "only the buyable cart is summarised");
+        assertTrue(summary.getIssues().isEmpty(), "an invisible cart is not raised as an issue");
         assertEquals(2, summary.getTotalItemCount(), "only the healthy cart counts, and it holds 2 units");
-        assertEquals(new BigDecimal("125"), summary.getGrandTotal(), "50x2 + 20 + 5; broken cart not charged");
+        assertEquals(new BigDecimal("125"), summary.getGrandTotal(), "50x2 + 20 + 5; dead cart not charged");
     }
 
     @Test
@@ -458,8 +465,12 @@ class OrderServiceCheckoutSummaryTest {
     @Test
     @DisplayName("Previewing cart IDs the customer does not own is an error, not a silent empty total")
     void unknownCartIdsAreRejected() {
-        stubProduct(UUID.randomUUID(), new BigDecimal("50"), Set.of(UUID.randomUUID()));
-        givenOpenCart(new int[] { 1 }, UUID.randomUUID());
+        // A real, visible cart must exist, otherwise the service would correctly
+        // fail earlier with CART_EMPTY and the CART_NOT_FOUND branch — the one
+        // under test — would never be reached.
+        UUID owned = UUID.randomUUID();
+        stubProduct(owned, new BigDecimal("50"), Set.of(vendor1));
+        givenOpenCart(new int[] { 1 }, owned);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> summaryOf(List.of(UUID.randomUUID())));

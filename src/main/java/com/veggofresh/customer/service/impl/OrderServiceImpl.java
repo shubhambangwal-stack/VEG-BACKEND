@@ -123,7 +123,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
 
-        List<Cart> openCarts = shoppableCarts(userId);
+        List<Cart> openCarts = shoppableCarts(userId, newVendorSession(address));
         if (openCarts.isEmpty()) {
             throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
         }
@@ -245,10 +245,8 @@ public class OrderServiceImpl implements OrderService {
      * numbering from the cart screen. Writers should have retired them already
      * (see CartServiceImpl); this is the read-side guard.
      */
-    private List<Cart> shoppableCarts(UUID userId) {
-        return cartRepository.findByUserIdOrderByCreatedAtAscIdAsc(userId).stream()
-                .filter(Cart::hasItems)
-                .collect(Collectors.toList());
+    private List<Cart> shoppableCarts(UUID userId, CartVendorResolver.Session vendors) {
+        return vendors.visibleCarts(cartRepository.findByUserIdOrderByCreatedAtAscIdAsc(userId));
     }
 
     private CartVendorResolver.Session newVendorSession(Address address) {
@@ -799,12 +797,16 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new BusinessException("ADDRESS_NOT_FOUND", "Invalid address selected",
                         HttpStatus.BAD_REQUEST));
 
-        List<Cart> carts = shoppableCarts(userId);
+        CartVendorResolver.Session vendors = newVendorSession(address);
+
+        // The same visibility rule the cart screen applies, so the labels below
+        // are the customer's real "Cart 1, Cart 2, ..." and not a second,
+        // disagreeing numbering.
+        List<Cart> carts = shoppableCarts(userId, vendors);
         if (carts.isEmpty()) {
             throw new BusinessException("CART_EMPTY", "You have no items in any cart", HttpStatus.BAD_REQUEST);
         }
 
-        CartVendorResolver.Session vendors = newVendorSession(address);
         BigDecimal deliveryFee = platformSettingsService.getDeliveryFeeAmount();
         BigDecimal estimatedTax = platformSettingsService.getPlatformFeeAmount();
 

@@ -40,7 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -181,6 +183,55 @@ class CartServiceImplTest {
         assertEquals(2, carts.size());
         assertEquals("Cart 1", carts.get(0).getCartLabel());
         assertEquals("Cart 2", carts.get(1).getCartLabel());
+    }
+
+    @Test
+    @DisplayName("A cart whose every product has become unavailable is not returned as an empty cart")
+    void cartWithOnlyUnavailableProductsIsHidden() {
+        UUID dead = UUID.randomUUID();
+        stubUnavailable(dead);
+        givenOpenCart(new int[] { 2 }, dead);
+
+        List<CartResponseDto> carts = cartService.getOpenCarts(userId);
+
+        // The row still holds an item, so a filter on rows alone keeps it -- and
+        // the client then renders a cart with an empty item list and a 0 total.
+        // That is the "empty cart" the customer reported still seeing.
+        assertTrue(carts.isEmpty(), "a cart that can show or charge no item at all must not be returned");
+    }
+
+    @Test
+    @DisplayName("Hiding an all-unavailable cart does not leave a gap in the labels")
+    void hidingUnavailableCartKeepsLabelsContiguous() {
+        UUID dead = UUID.randomUUID();
+        UUID good = UUID.randomUUID();
+        stubUnavailable(dead);
+        stubProduct(good, new BigDecimal("10"), Set.of(vendor1));
+        givenOpenCart(new int[] { 1 }, dead);
+        givenOpenCart(new int[] { 1 }, good);
+
+        List<CartResponseDto> carts = cartService.getOpenCarts(userId);
+
+        assertEquals(1, carts.size());
+        assertEquals("Cart 1", carts.get(0).getCartLabel(),
+                "the survivor fills the gap rather than staying labelled Cart 2");
+    }
+
+    @Test
+    @DisplayName("A cart mixing available and unavailable products keeps its buyable lines")
+    void partiallyAvailableCartKeepsItsBuyableLines() {
+        UUID good = UUID.randomUUID();
+        UUID dead = UUID.randomUUID();
+        stubProduct(good, new BigDecimal("10"), Set.of(vendor1));
+        stubUnavailable(dead);
+        givenOpenCart(new int[] { 3, 4 }, good, dead);
+
+        List<CartResponseDto> carts = cartService.getOpenCarts(userId);
+
+        assertEquals(1, carts.size());
+        assertEquals(1, carts.get(0).getItems().size(), "only the buyable line is rendered");
+        assertEquals(3, carts.get(0).getItemCount());
+        assertEquals(1, carts.get(0).getUnavailableItemCount());
     }
 
     @Test
@@ -563,7 +614,7 @@ class CartServiceImplTest {
     }
 
     @Test
-    @DisplayName("Fees are resolved once per response, not once per cart")
+    @DisplayName("Fee configuration is resolved once for the whole response, and each product is looked up once")
     void feesAreResolvedOnce() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
@@ -574,8 +625,18 @@ class CartServiceImplTest {
 
         cartService.getOpenCarts(userId);
 
+        // The fees are identical for every cart, so they must not be re-read
+        // per cart.
         verify(platformSettingsService).getDeliveryFeeAmount();
         verify(platformSettingsService).getPlatformFeeAmount();
-        verify(productCatalogService, never()).getShopIdsForProduct(any(UUID.class), anyDouble(), anyDouble());
+
+        // Deciding which carts are worth showing means asking which products are
+        // still buyable, so the catalog IS consulted here now. What matters is
+        // that it is consulted once per distinct product rather than once per
+        // cart, per item, or again for the pricing pass.
+        verify(productCatalogService).getShopIdsForProduct(a, LAT, LNG);
+        verify(productCatalogService).getShopIdsForProduct(b, LAT, LNG);
+        verify(productCatalogService, times(1)).findEligibleProductById(eq(a), anyDouble(), anyDouble());
+        verify(productCatalogService, times(1)).findEligibleProductById(eq(b), anyDouble(), anyDouble());
     }
 }

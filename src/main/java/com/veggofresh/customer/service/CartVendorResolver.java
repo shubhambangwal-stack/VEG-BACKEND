@@ -225,5 +225,35 @@ public class CartVendorResolver {
             }
             return shippable;
         }
+
+        /**
+         * The carts a customer should actually see, in list order.
+         *
+         * <p>A cart qualifies only if it can show and charge at least one item
+         * here. Two things disqualify one: it lost its last line (a row-level
+         * ghost), or every line it still holds points at a product that is no
+         * longer available at this location. The second case is the one that
+         * matters: the client otherwise draws a card with an empty item list, a
+         * 0 total and a checkout button that cannot work.
+         *
+         * <p>This lives here, not in either caller, on purpose. The cart screen
+         * and the checkout summary both number their carts "Cart 1, Cart 2, ..."
+         * and the client ties the two together. If each side applied its own
+         * idea of which carts are visible, hiding a cart on one screen and not
+         * the other would shift every later label — the exact desync this was
+         * written to end.
+         */
+        public List<Cart> visibleCarts(List<Cart> carts) {
+            List<Cart> visible = new ArrayList<>();
+            if (carts == null) {
+                return visible;
+            }
+            for (Cart cart : carts) {
+                if (cart != null && cart.hasItems() && !onlyShippableItems(cart).isEmpty()) {
+                    visible.add(cart);
+                }
+            }
+            return visible;
+        }
     }
 }

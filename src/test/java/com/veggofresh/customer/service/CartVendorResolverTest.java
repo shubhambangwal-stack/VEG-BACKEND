@@ -285,6 +285,73 @@ class CartVendorResolverTest {
         assertEquals(alive, shippable.get(0).getProductId());
     }
 
+    // ── visibleCarts: the one rule the cart screen and checkout both number by ──
+
+    @Test
+    @DisplayName("visibleCarts drops a cart with no item rows at all")
+    void visibleCartsDropsRowLevelGhosts() {
+        assertTrue(session().visibleCarts(List.of(emptyCart())).isEmpty());
+    }
+
+    @Test
+    @DisplayName("visibleCarts drops a cart whose rows all point at products nobody sells any more")
+    void visibleCartsDropsWhollyUnavailableCart() {
+        UUID dead = UUID.randomUUID();
+        when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+
+        // The row still exists, which is why a rows-only filter keeps it and the
+        // client then renders an empty cart card.
+        assertTrue(session().visibleCarts(List.of(cartWith(dead, 3))).isEmpty());
+    }
+
+    @Test
+    @DisplayName("visibleCarts keeps a partly-unavailable cart, because it can still show and charge a line")
+    void visibleCartsKeepsPartlyUnavailableCart() {
+        UUID alive = UUID.randomUUID();
+        UUID dead = UUID.randomUUID();
+        when(productCatalogService.getShopIdsForProduct(alive, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
+        when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+
+        Cart cart = cartWith(alive, 2);
+        CartItem deadItem = new CartItem();
+        deadItem.setCart(cart);
+        deadItem.setProductId(dead);
+        deadItem.setQuantity(5);
+        cart.getItems().add(deadItem);
+
+        assertEquals(1, session().visibleCarts(List.of(cart)).size());
+    }
+
+    @Test
+    @DisplayName("visibleCarts preserves order so the Cart N labels stay stable")
+    void visibleCartsPreservesOrder() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID dead = UUID.randomUUID();
+        when(productCatalogService.getShopIdsForProduct(first, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
+        when(productCatalogService.getShopIdsForProduct(second, 12.9716, 77.5946)).thenReturn(Set.of(vendor2));
+        when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+
+        Cart one = cartWith(first, 1);
+        Cart hidden = cartWith(dead, 1);
+        Cart two = cartWith(second, 1);
+
+        // The middle cart drops out, so the survivor keeps its own position: the
+        // customer saw it as "Cart 3" before and must still see "Cart 3".
+        List<Cart> visible = session().visibleCarts(List.of(one, hidden, two));
+
+        assertEquals(2, visible.size());
+        assertSame(one, visible.get(0));
+        assertSame(two, visible.get(1));
+    }
+
+    @Test
+    @DisplayName("visibleCarts tolerates null input and null entries")
+    void visibleCartsToleratesNulls() {
+        assertTrue(session().visibleCarts(null).isEmpty());
+        assertTrue(session().visibleCarts(java.util.Arrays.asList((Cart) null, emptyCart())).isEmpty());
+    }
+
     @Test
     @DisplayName("A cart is shippable when all its items share at least one vendor")
     void revalidatePassesForCoherentCart() {

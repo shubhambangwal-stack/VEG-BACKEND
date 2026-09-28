@@ -151,7 +151,7 @@ public class CartServiceImpl implements CartService {
         recomputePromo(targetCart, vendors);
         cartRepository.save(targetCart);
 
-        return toResponses(userId);
+        return toResponses(userId, vendors);
     }
 
     @Override
@@ -179,7 +179,7 @@ public class CartServiceImpl implements CartService {
         recomputePromo(cart, vendors);
         cartRepository.save(cart);
 
-        return toResponses(userId);
+        return toResponses(userId, vendors);
     }
 
     @Override
@@ -209,7 +209,7 @@ public class CartServiceImpl implements CartService {
 
         retireIfEmptied(cart);
 
-        return toResponses(userId);
+        return toResponses(userId, vendors);
     }
 
     @Override
@@ -334,8 +334,19 @@ public class CartServiceImpl implements CartService {
      * counter, one order — see CartService#cartLabel.
      */
     private List<CartResponseDto> toResponses(UUID userId) {
-        List<Cart> carts = loadShoppableCarts(userId);
-        CartVendorResolver.Session vendors = newSessionFor(userId);
+        return toResponses(userId, newSessionFor(userId));
+    }
+
+    /**
+     * Same, but reusing a session the caller already opened.
+     *
+     * <p>Mutating methods are handed a session to place the item and re-sync the
+     * vendor set, and then have to render the resulting cart list. Without this
+     * overload they would open a SECOND session, whose cache is cold, and
+     * re-resolve the vendors of every product they had just looked up.
+     */
+    private List<CartResponseDto> toResponses(UUID userId, CartVendorResolver.Session vendors) {
+        List<Cart> carts = vendors.visibleCarts(cartRepository.findByUserIdOrderByCreatedAtAscIdAsc(userId));
 
         // Fee configuration and per-product lookups are identical for every cart
         // in this response. Resolving them once turns the previous per-cart,
@@ -345,8 +356,8 @@ public class CartServiceImpl implements CartService {
         Map<UUID, ProductDto> products = resolveProducts(carts, vendors);
 
         List<CartResponseDto> responses = new ArrayList<>(carts.size());
-        for (int i = 0; i < carts.size(); i++) {
-            responses.add(mapToDto(carts.get(i), cartLabel(i), products, deliveryFee, estimatedTax));
+        for (Cart cart : carts) {
+            responses.add(mapToDto(cart, cartLabel(responses.size()), products, deliveryFee, estimatedTax));
         }
         return responses;
     }
@@ -416,18 +427,6 @@ public class CartServiceImpl implements CartService {
     }
 
     /**
-     * The customer's open carts that actually hold something, oldest first.
-     * Ghosts are skipped here as a belt-and-braces guard: even if a ghost
-     * somehow survives (e.g. rows written before this fix shipped), it can never
-     * reach the client and steal a label slot.
-     */
-    private List<Cart> loadShoppableCarts(UUID userId) {
-        return cartRepository.findByUserIdOrderByCreatedAtAscIdAsc(userId).stream()
-                .filter(Cart::hasItems)
-                .collect(Collectors.toList());
-    }
-
-    /**
      * Soft-deletes any open-but-empty cart, and returns the carts that still
      * hold something. This is the fix for the reported symptom: removing the
      * last item from a cart used to leave the row open, so a customer with two
@@ -435,9 +434,9 @@ public class CartServiceImpl implements CartService {
      * re-counted inconsistently, and could be resurrected by a later add
      * together with its stale promo code.
      *
-     * <p>Write paths pass the UNFILTERED list; read paths call
-     * {@link #loadShoppableCarts} instead, which only guards against ghosts that
-     * were never cleaned up.
+     * <p>Write paths pass the UNFILTERED list; read paths go through
+     * {@link CartVendorResolver.Session#visibleCarts} instead, which also drops
+     * carts that hold only unbuyable products and needs no writes.
      */
     private List<Cart> retireGhostCarts(List<Cart> carts) {
         List<Cart> survivors = new ArrayList<>(carts.size());
