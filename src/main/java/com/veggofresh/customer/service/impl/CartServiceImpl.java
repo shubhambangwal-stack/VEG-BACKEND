@@ -574,8 +574,6 @@ public class CartServiceImpl implements CartService {
      * catch-and-return-null here.
      */
     private ProductDto safeGetProduct(UUID productId, CartVendorResolver.Session vendors) {
-        return productCatalogService
-                .findEligibleProductById(productId, vendors.latitude(), vendors.longitude())
-                .orElse(null);
+        return vendors.productFor(productId);
     }
 }

@@ -274,8 +274,9 @@ public class OrderServiceImpl implements OrderService {
         // propagated out of the whole checkout loop: one stale line in Cart 1
         // used to abort checkout for Cart 2 and Cart 3 as well, and the
         // customer got a 400 for carts that were perfectly fine.
+        CartVendorResolver.Session vendors = newVendorSession(address);
         for (CartItem item : shippableItems) {
-            ProductDto product = safeGetProduct(item.getProductId(), address.getLatitude(), address.getLongitude());
+            ProductDto product = safeGetProduct(item.getProductId(), vendors);
             if (product == null || product.getPrice() == null) {
                 continue;
             }
@@ -290,6 +291,23 @@ public class OrderServiceImpl implements OrderService {
 
             subtotal = subtotal.add(product.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
         }
+
+        // A fee-only order is never acceptable. The delivery and platform fees
+        // below are added unconditionally, so an order whose line items all
+        // dropped out (product deactivated between the shippability guard and
+        // here, a null price, or any future divergence between the availability
+        // predicate and the pricing one) would be persisted with no items and a
+        // total of deliveryFee + platformFee -- charging the customer real money
+        // for an empty order, then soft-deleting the cart so it cannot be
+        // recovered. Refuse to build the order instead. Deliberately throws
+        // rather than skipping the cart: the cart was explicitly selected, and
+        // silently dropping it would hand back fewer orders than the customer
+        // confirmed.
+        if (orderItems.isEmpty()) {
+            throw new BusinessException("CART_EMPTY",
+                    "No items in this cart are currently available to order", HttpStatus.CONFLICT);
+        }
+
         order.setItems(orderItems);
 
         if (slot != null) {
@@ -423,9 +441,10 @@ public class OrderServiceImpl implements OrderService {
                 .isCurrent(currentStatus == OrderStatus.DELIVERED)
                 .build());
 
+        CartVendorResolver.Session itemVendors = itemSession(order);
         List<OrderItemResponseDto> items = order.getItems().stream()
                 .map(item -> {
-                    ProductDto product = safeGetProduct(item.getProductId(), order.getLatitude(), order.getLongitude());
+                    ProductDto product = safeGetProduct(item.getProductId(), itemVendors);
                     String name = product != null ? product.getName() : "Unknown Product";
                     return OrderItemResponseDto.builder()
                             .id(item.getId())
@@ -741,9 +760,10 @@ public class OrderServiceImpl implements OrderService {
                 .filter(name -> name != null && !name.isBlank())
                 .orElse(user.getPhone());
 
+        CartVendorResolver.Session invoiceVendors = itemSession(order);
         List<InvoiceLineItemDto> lineItems = order.getItems().stream()
                 .map(item -> {
-                    ProductDto product = safeGetProduct(item.getProductId(), order.getLatitude(), order.getLongitude());
+                    ProductDto product = safeGetProduct(item.getProductId(), invoiceVendors);
                     String name = product != null ? product.getName() : "Unknown Product";
                     return InvoiceLineItemDto.builder()
                             .productName(name)
@@ -855,7 +875,7 @@ public class OrderServiceImpl implements OrderService {
             int itemCount = 0;
             int unavailableItemCount = 0;
             for (CartItem item : cart.getItems()) {
-                ProductDto product = safeGetProduct(item.getProductId(), address.getLatitude(), address.getLongitude());
+                ProductDto product = safeGetProduct(item.getProductId(), vendors);
                 if (product == null || product.getPrice() == null) {
                     unavailableItemCount++;
                     continue;
@@ -915,20 +935,34 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * Vendor's getProductById throws rather than returning null on
-     * not-found/not-eligible (always has, before and after the catalog
-     * pivot). Wrapping it here restores the graceful per-item skip several
-     * `if (product != null)` checks in this class visually intended.
+     * Resolves a product exactly the way the cart screen did, through the same
+     * cached session lookup. Going straight to the catalog here is what let the
+     * availability guard and the price disagree: two calls, two answers.
      *
-     * ⚠️ Uses the non-throwing findEligibleProductById with NO try/catch on
+     * <p>Vendor's getProductById throws rather than returning null on
+     * not-found/not-eligible (always has, before and after the catalog pivot).
+     * Wrapping it restores the graceful per-item skip the `if (product != null)`
+     * checks in this class visually intended.
+     *
+     * <p>Uses the non-throwing findEligibleProductById with NO try/catch on
      * purpose. Swallowing an exception raised inside a nested @Transactional
      * method still marks this transaction rollback-only, and the failure only
      * surfaces at commit as UnexpectedRollbackException -- long after the catch
      * block, with no clue which item caused it.
      */
-    private ProductDto safeGetProduct(UUID productId, double latitude, double longitude) {
-        return productCatalogService
-                .findEligibleProductById(productId, latitude, longitude)
-                .orElse(null);
+    private ProductDto safeGetProduct(UUID productId, CartVendorResolver.Session vendors) {
+        return vendors.productFor(productId);
+    }
+
+    /**
+     * A session pinned to the order's own delivery location, for reading back the
+     * products on an order that already exists. Vendor eligibility is
+     * location-dependent, so this deliberately reuses the order's coordinates
+     * rather than the customer's current position.
+     */
+    private CartVendorResolver.Session itemSession(Order order) {
+        // Primitives, so no null check is possible: an order with no stored
+        // coordinates falls back to the origin rather than throwing mid-render.
+        return cartVendorResolver.newSession(order.getLatitude(), order.getLongitude());
     }
 }

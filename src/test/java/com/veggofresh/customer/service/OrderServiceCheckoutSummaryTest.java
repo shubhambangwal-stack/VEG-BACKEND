@@ -168,6 +168,20 @@ class OrderServiceCheckoutSummaryTest {
                 .thenReturn(Optional.empty());
     }
 
+    /**
+     * The disagreement that let a ₹25 phantom charge through: the product is
+     * still carried by a live, in-range vendor, so
+     * {@code getShopIdsForProduct} answers "available" and the cart passes the
+     * shippability guard, but the admin has deactivated it, so
+     * {@code findEligibleProductById} -- the lookup the price/line-item path
+     * actually uses -- answers empty and every line drops out.
+     */
+    private void stubDeactivatedButStillListed(UUID productId) {
+        lenient().when(productCatalogService.getShopIdsForProduct(productId, LAT, LNG)).thenReturn(Set.of(vendor1));
+        lenient().when(productCatalogService.findEligibleProductById(productId, LAT, LNG))
+                .thenReturn(Optional.empty());
+    }
+
     private Cart givenOpenCart(int[] quantities, UUID... productIds) {
         Cart cart = new Cart();
         cart.setId(UUID.randomUUID());
@@ -424,6 +438,46 @@ class OrderServiceCheckoutSummaryTest {
 
         BusinessException ex = assertThrows(BusinessException.class, this::summary);
         assertEquals("CART_EMPTY", ex.getErrorCode());
+    }
+
+    // ── the ₹25 phantom charge ─────────────────────────────────────────────
+    //
+    // A cart holding only a product that is deactivated-but-still-listed used to
+    // survive the shippability guard (which only asked about the live listing)
+    // and then lose every line during pricing (which does check isActive). The
+    // preview went on to add delivery + platform fee to a zero subtotal, so the
+    // customer was quoted money for an order with nothing in it.
+
+    @Test
+    @DisplayName("A cart of only deactivated-but-still-listed products is not previewed as a fee-only order")
+    void deactivatedOnlyCartIsNotChargedFees() {
+        UUID deactivated = UUID.randomUUID();
+        stubDeactivatedButStillListed(deactivated);
+        givenOpenCart(new int[] { 3 }, deactivated);
+
+        BusinessException ex = assertThrows(BusinessException.class, this::summary);
+
+        assertEquals("CART_EMPTY", ex.getErrorCode(),
+                "a cart with nothing buyable must be an error, never a fee-only total");
+    }
+
+    @Test
+    @DisplayName("A deactivated product alongside a live one drops only its own line, not the whole cart")
+    void deactivatedLineIsExcludedButCartSurvives() {
+        UUID live = UUID.randomUUID();
+        UUID deactivated = UUID.randomUUID();
+        stubProduct(live, new BigDecimal("50"), Set.of(vendor1));
+        stubDeactivatedButStillListed(deactivated);
+        givenOpenCart(new int[] { 2, 4 }, live, deactivated);
+
+        CheckoutSummaryDto summary = summary();
+
+        assertEquals(1, summary.getCarts().size(), "the cart is still deliverable via its live line");
+        CartCheckoutBreakdownDto cart = summary.getCarts().get(0);
+        assertEquals(2, cart.getItemCount(), "only the live line's quantity counts");
+        assertEquals(1, cart.getUnavailableItemCount(), "the deactivated line is reported, not silently dropped");
+        assertEquals(0, new BigDecimal("50").multiply(new BigDecimal("2")).compareTo(cart.getSubtotal()),
+                "subtotal is the live lines only, so no fees are charged on a phantom line");
     }
 
     // ── selective checkout (cartIds, from e8ba06c) ─────────────────────────

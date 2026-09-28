@@ -2,6 +2,7 @@ package com.veggofresh.customer.service;
 
 import com.veggofresh.customer.entity.Cart;
 import com.veggofresh.customer.entity.CartItem;
+import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 
 import lombok.RequiredArgsConstructor;
@@ -92,6 +93,7 @@ public class CartVendorResolver {
         private final double latitude;
         private final double longitude;
         private final Map<UUID, Set<UUID>> vendorCache = new HashMap<>();
+        private final Map<UUID, ProductDto> resolvedProductCache = new HashMap<>();
 
         private Session(ProductCatalogService productCatalogService, double latitude, double longitude) {
             this.productCatalogService = productCatalogService;
@@ -114,6 +116,55 @@ public class CartVendorResolver {
                 // Copy: the caller (and the cart entity) may hold/mutate this.
                 return vendors == null ? Set.of() : Set.copyOf(vendors);
             });
+        }
+
+        /**
+         * The product as the <em>price/line-item</em> path sees it, or null when
+         * it cannot be bought here. Cached, and the single source both
+         * {@link #isPurchasable} and every pricing pass must go through, so the
+         * availability question and the price question can never be answered
+         * from two different snapshots of the catalog.
+         *
+         * <p>This deliberately does NOT ask {@link #vendorsFor}. That method asks
+         * the vendor module "does any live listing exist" -- {@code isListed &&
+         * shop in range} -- whereas this is
+         * {@code findEligibleProductById}, which additionally requires the
+         * catalog product itself to be {@code isActive}. A product deactivated
+         * by an admin but still carried by a live listing therefore answered
+         * "yes" to {@code vendorsFor} and "no" here, and the two callers that
+         * disagreed produced two money bugs:
+         *
+         * <ul>
+         *   <li>the cart passed the shippability guard, then every line was
+         *       dropped during pricing, so the order was built with zero items
+         *       and still charged delivery + platform fees;</li>
+         *   <li>the cart passed {@link #visibleCarts} and rendered as an empty
+         *       "Cart 1" card with a non-zero payable amount.</li>
+         * </ul>
+         *
+         * <p>Note this cannot affect the add path: {@code addItemToCart} calls
+         * {@code getProductById} first, which throws for an inactive product, so
+         * the only way to reach here with an inactive product is one that went
+         * into the cart while active and was deactivated afterwards.
+         */
+        public ProductDto productFor(UUID productId) {
+            if (productId == null) {
+                return null;
+            }
+            if (resolvedProductCache.containsKey(productId)) {
+                return resolvedProductCache.get(productId);
+            }
+            Optional<ProductDto> product = productCatalogService.findEligibleProductById(productId, latitude, longitude);
+            // Null, not Optional.empty(), because every caller here treats
+            // "unresolvable" as null and a null value in a HashMap is legal.
+            ProductDto resolved = product == null ? null : product.orElse(null);
+            resolvedProductCache.put(productId, resolved);
+            return resolved;
+        }
+
+        /** Whether {@link #productFor} can resolve this product at this location. */
+        public boolean isPurchasable(UUID productId) {
+            return productFor(productId) != null;
         }
 
         /**
@@ -212,6 +263,12 @@ public class CartVendorResolver {
          * their resolved product. Items whose product is no longer available are
          * omitted rather than throwing, so one dead line item degrades a single
          * cart instead of aborting a whole checkout.
+         *
+         * <p>Requires BOTH a live vendor ({@link #vendorsFor}) and
+         * {@link #isPurchasable}. Requiring only the vendor was the bug: a
+         * deactivated product with a live listing was treated as shippable here,
+         * while the pricing path dropped it, so the caller could end up charging
+         * fees for an order this method had just certified as having stock.
          */
         public List<CartItem> onlyShippableItems(Cart cart) {
             List<CartItem> shippable = new ArrayList<>();
@@ -219,7 +276,11 @@ public class CartVendorResolver {
                 return shippable;
             }
             for (CartItem item : cart.getItems()) {
-                if (item != null && !vendorsFor(item.getProductId()).isEmpty()) {
+                if (item == null) {
+                    continue;
+                }
+                UUID productId = item.getProductId();
+                if (isPurchasable(productId) && !vendorsFor(productId).isEmpty()) {
                     shippable.add(item);
                 }
             }

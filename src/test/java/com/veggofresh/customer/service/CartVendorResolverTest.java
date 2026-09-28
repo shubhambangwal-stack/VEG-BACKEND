@@ -2,6 +2,7 @@ package com.veggofresh.customer.service;
 
 import com.veggofresh.customer.entity.Cart;
 import com.veggofresh.customer.entity.CartItem;
+import com.veggofresh.vendor.dto.ProductDto;
 import com.veggofresh.vendor.service.ProductCatalogService;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +61,19 @@ class CartVendorResolverTest {
     private void vendorsOf(UUID productId, Set<UUID> vendorIds) {
         when(productCatalogService.getShopIdsForProduct(any(UUID.class), anyDouble(), anyDouble()))
                 .thenReturn(vendorIds);
+    }
+
+    /**
+     * Marks products as buyable, which is the {@code findEligibleProductById}
+     * (isActive + live listing + in range) answer the pricing path relies on.
+     * Anything not named here resolves to {@link Optional#empty()} and so counts
+     * as unavailable.
+     */
+    private void purchasable(UUID... productIds) {
+        for (UUID productId : productIds) {
+            when(productCatalogService.findEligibleProductById(productId, 12.9716, 77.5946))
+                    .thenReturn(Optional.of(ProductDto.builder().id(productId).build()));
+        }
     }
 
     private Cart cartWith(UUID productId, int quantity) {
@@ -271,6 +285,7 @@ class CartVendorResolverTest {
         UUID dead = UUID.randomUUID();
         when(productCatalogService.getShopIdsForProduct(alive, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
         when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+        purchasable(alive);
 
         Cart cart = cartWith(alive, 1);
         CartItem deadItem = new CartItem();
@@ -311,6 +326,7 @@ class CartVendorResolverTest {
         UUID dead = UUID.randomUUID();
         when(productCatalogService.getShopIdsForProduct(alive, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
         when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+        purchasable(alive);
 
         Cart cart = cartWith(alive, 2);
         CartItem deadItem = new CartItem();
@@ -331,6 +347,7 @@ class CartVendorResolverTest {
         when(productCatalogService.getShopIdsForProduct(first, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
         when(productCatalogService.getShopIdsForProduct(second, 12.9716, 77.5946)).thenReturn(Set.of(vendor2));
         when(productCatalogService.getShopIdsForProduct(dead, 12.9716, 77.5946)).thenReturn(Set.of());
+        purchasable(first, second);
 
         Cart one = cartWith(first, 1);
         Cart hidden = cartWith(dead, 1);
@@ -350,6 +367,71 @@ class CartVendorResolverTest {
     void visibleCartsToleratesNulls() {
         assertTrue(session().visibleCarts(null).isEmpty());
         assertTrue(session().visibleCarts(java.util.Arrays.asList((Cart) null, emptyCart())).isEmpty());
+    }
+
+    // ── A deactivated product must not count as shippable ──
+    //
+    // The two availability questions disagreed. getShopIdsForProduct (used by
+    // vendorsFor) only asks whether a LIVE LISTING exists; the price/line-item
+    // path asks findEligibleProductById, which also requires the catalog product
+    // to be isActive. A product deactivated by an admin but still carried by a
+    // live listing therefore passed the shippability guard and then had every
+    // line dropped during pricing -- producing an order with zero items that was
+    // still charged delivery + platform fees, and a cart card that rendered
+    // empty with a non-zero payable amount.
+
+    @Test
+    @DisplayName("A deactivated product with a live listing is NOT shippable, so no fee-only order is possible")
+    void deactivatedProductWithLiveListingIsNotShippable() {
+        UUID deactivated = UUID.randomUUID();
+        // Still carried by a live, in-range vendor...
+        when(productCatalogService.getShopIdsForProduct(deactivated, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
+        // ...but findEligibleProductById returns empty, i.e. isActive == false.
+        // No purchasable() call: that is the scenario.
+
+        Cart cart = cartWith(deactivated, 2);
+
+        assertTrue(session().onlyShippableItems(cart).isEmpty(),
+                "a deactivated product must not be reported as shippable");
+        assertTrue(session().visibleCarts(List.of(cart)).isEmpty(),
+                "a cart holding only a deactivated product must not render as an empty card");
+    }
+
+    @Test
+    @DisplayName("A cart keeps a live line even when a sibling product is deactivated")
+    void deactivatedSiblingDoesNotSinkTheCart() {
+        UUID alive = UUID.randomUUID();
+        UUID deactivated = UUID.randomUUID();
+        when(productCatalogService.getShopIdsForProduct(alive, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
+        when(productCatalogService.getShopIdsForProduct(deactivated, 12.9716, 77.5946)).thenReturn(Set.of(vendor1));
+        purchasable(alive);
+
+        Cart cart = cartWith(alive, 2);
+        CartItem deadItem = new CartItem();
+        deadItem.setCart(cart);
+        deadItem.setProductId(deactivated);
+        deadItem.setQuantity(5);
+        cart.getItems().add(deadItem);
+
+        List<CartItem> shippable = session().onlyShippableItems(cart);
+
+        assertEquals(1, shippable.size(), "the live line must survive its deactivated sibling");
+        assertEquals(alive, shippable.get(0).getProductId());
+        assertEquals(1, session().visibleCarts(List.of(cart)).size());
+    }
+
+    @Test
+    @DisplayName("isPurchasable answers from the same lookup the price path uses, and caches per session")
+    void isPurchasableMatchesThePricePathLookup() {
+        UUID alive = UUID.randomUUID();
+        purchasable(alive);
+
+        CartVendorResolver.Session session = session();
+        assertTrue(session.isPurchasable(alive));
+        assertTrue(session.isPurchasable(alive));
+        assertFalse(session.isPurchasable(UUID.randomUUID()));
+
+        verify(productCatalogService, times(1)).findEligibleProductById(alive, 12.9716, 77.5946);
     }
 
     @Test
@@ -391,6 +473,19 @@ class CartVendorResolverTest {
 
         assertTrue(session.vendorsFor(productId).isEmpty());
         assertTrue(session.bestCartFor(List.of(cartWith(productId, 1)), productId).isEmpty());
+    }
+
+    @Test
+    @DisplayName("A null product lookup never NPEs and counts as unavailable")
+    void nullProductLookupIsHandled() {
+        UUID productId = UUID.randomUUID();
+        when(productCatalogService.findEligibleProductById(productId, 12.9716, 77.5946)).thenReturn(null);
+
+        CartVendorResolver.Session session = session();
+
+        assertFalse(session.isPurchasable(productId));
+        assertTrue(session.onlyShippableItems(cartWith(productId, 1)).isEmpty());
+        assertTrue(session.visibleCarts(List.of(cartWith(productId, 1))).isEmpty());
     }
 
     @Test
