@@ -59,6 +59,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -66,7 +67,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -88,16 +88,27 @@ import java.util.stream.Collectors;
 @Transactional
 public class OrderServiceImpl implements OrderService {
 
+    /** Human-facing prefix, so an order number is recognisable in support chats. */
+    private static final String ORDER_NUMBER_PREFIX = "#DM-";
+
     /**
-     * Order numbers are derived from a random draw, so a single shared
-     * {@link Random} is used rather than allocating one per order. The instance
-     * is not thread-safe; it is guarded so concurrent checkouts cannot corrupt
-     * its internal state (a plain {@code new Random()} per call was also
-     * reseeded from the clock on every order, which made collisions likelier
-     * under load, not less).
+     * Number of random base-36 characters after the prefix. 15 characters is
+     * 15 * log2(36) ~= 77.1 bits of entropy, which puts the birthday-bound
+     * collision point at roughly 10^11 orders -- far beyond any realistic table
+     * size, and well past the 20-character column limit with room to spare.
+     * See {@link #nextOrderNumber()}.
      */
-    private static final Random ORDER_NUMBER_RANDOM = new Random();
-    private static final Object ORDER_NUMBER_LOCK = new Object();
+    private static final int ORDER_NUMBER_RANDOM_CHARS = 15;
+
+    private static final char[] BASE36_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".toCharArray();
+
+    /**
+     * Shared CSPRNG. Deliberately static and thread-safe ({@link SecureRandom}
+     * is), so concurrent checkouts draw from one source without locking, and
+     * unlike a per-node counter the draws carry no shared state between
+     * application instances.
+     */
+    private static final SecureRandom ORDER_NUMBER_RANDOM = new SecureRandom();
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -350,10 +361,42 @@ public class OrderServiceImpl implements OrderService {
         return discount.compareTo(subtotal) > 0 ? subtotal : discount;
     }
 
+    /**
+     * A customer-facing order number: {@code #DM-} plus
+     * {@value #ORDER_NUMBER_RANDOM_CHARS} random base-36 characters.
+     *
+     * <p>This was two different bugs before it was settled.
+     *
+     * <p>First it was 6 random digits ({@code #DM-} + 100000..999999) against a
+     * {@code unique = true} column with no collision handling. The draw was
+     * atomic, which said nothing about uniqueness, so two concurrent checkouts
+     * could pick the same number and the second INSERT would fail on the unique
+     * constraint. Because checkout builds every order in one transaction, that
+     * surfaced as a 500 on the whole multi-cart order rather than on the one
+     * unlucky cart, and it got likelier as the table filled: with 10k orders in
+     * 900k slots, a collision is roughly once per 90 order numbers.
+     *
+     * <p>It was then a base-36 timestamp plus a per-millisecond counter, which
+     * fixed the collision rate but not the cause. The counter is per-process, so
+     * two application instances ordering in the same millisecond still
+     * overlapped, and it bought uniqueness with a silent guarantee that only
+     * holds while a single node runs. Any clock that steps backwards can also
+     * repeat a timestamp.
+     *
+     * <p>What is left draws purely from a CSPRNG. There is no shared state to
+     * coordinate between instances and no clock to trust, so the number is
+     * unique by entropy rather than by bookkeeping: 15 base-36 characters is
+     * about 77 bits, putting the birthday bound near 10^11 orders. The cost is
+     * that numbers no longer sort chronologically, so a support agent wanting
+     * creation time should read {@code createdAt} rather than parse the number.
+     */
     private String nextOrderNumber() {
-        synchronized (ORDER_NUMBER_LOCK) {
-            return "#DM-" + (100000 + ORDER_NUMBER_RANDOM.nextInt(900000));
+        StringBuilder number = new StringBuilder(ORDER_NUMBER_PREFIX.length() + ORDER_NUMBER_RANDOM_CHARS);
+        number.append(ORDER_NUMBER_PREFIX);
+        for (int i = 0; i < ORDER_NUMBER_RANDOM_CHARS; i++) {
+            number.append(BASE36_ALPHABET[ORDER_NUMBER_RANDOM.nextInt(BASE36_ALPHABET.length)]);
         }
+        return number.toString();
     }
 
     @Override
@@ -826,8 +869,30 @@ public class OrderServiceImpl implements OrderService {
                 .promoDiscount(order.getPromoDiscount())
                 .promoCode(order.getPromoCode())
                 .total(order.getTotalAmount())
-                .paymentMethod(order.getPaymentMethodId() != null ? "Credit Card" : "COD")
+                .paymentMethod(displayPaymentMethod(order))
                 .build();
+    }
+
+    /**
+     * Renders the stored payment method for display.
+     *
+     * <p>This used to be {@code paymentMethodId != null ? "Credit Card" : "COD"},
+     * which discarded whatever the customer actually chose at checkout. The field
+     * holds a free-text label ({@code COD}, {@code UPI}, {@code ONLINE},
+     * {@code WALLET}), so every prepaid order was reported to the customer and to
+     * the vendor as a card payment, and UPI and wallet orders were indistinguishable
+     * in support and reconciliation.
+     *
+     * <p>Falls back to COD when nothing was stored, which is what checkout does for
+     * an order placed without a method.
+     */
+    private String displayPaymentMethod(Order order) {
+        String stored = order.getPaymentMethodId();
+        if (stored == null || stored.isBlank()) {
+            return "COD";
+        }
+        String trimmed = stored.trim();
+        return trimmed.isEmpty() ? "COD" : trimmed.toUpperCase(Locale.ROOT);
     }
 
     @Override

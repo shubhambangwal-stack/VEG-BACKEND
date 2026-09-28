@@ -11,7 +11,7 @@ import java.util.UUID;
  * Called by the Vendor module and the Delivery module.
  * Never import Customer @Entity classes outside this module.
  */
-public interface CustomerOrderService {
+public interface CustomerOrderService extends com.veggofresh.payment.service.PaymentFailureHandler {
 
     // ── Vendor-facing methods ──────────────────────────────
     // BREAKING CHANGE THIS ROUND: acceptOrder/rejectOrder now require a shopId.
@@ -82,12 +82,23 @@ public interface CustomerOrderService {
      * limit hit) or, once built, Vendor's own broadcast leg. Unlike the customer-facing
      * cancelOrder(userId, orderId), this is NOT restricted to PLACED/CONFIRMED status and
      * does NOT check order ownership by a specific customer -- the caller is a system
-     * process reacting to a broadcast failure, not a user clicking cancel. Still performs
-     * the same wallet refund as customer-initiated cancellation. Safe to call on an
+     * process reacting to a broadcast failure, not a user clicking cancel. The refund
+     * is delegated to the payment module, which refunds only when the hold was
+     * actually captured. Safe to call on an
      * already-terminal order (DELIVERED/CANCELLED) -- becomes a no-op rather than
      * throwing, since the caller (a background sweep) shouldn't need to pre-check state.
      */
     void cancelOrderSystemInitiated(UUID orderId, String reason);
+
+    /**
+     * Reconciles every order covered by a payment that failed. One checkout creates
+     * one payment hold across N orders, so a single failed payment invalidates all
+     * of them at once. Implemented by the customer module and invoked by the payment
+     * module through {@link com.veggofresh.payment.service.PaymentFailureHandler},
+     * which keeps the dependency pointing one way.
+     */
+    @Override
+    void onPaymentFailed(UUID paymentOrderId, UUID userId, List<UUID> orderIds);
 
     /**
      * LEGACY — do not switch to this. Weak hashCode-derived OTP, no expiry,

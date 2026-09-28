@@ -7,17 +7,21 @@ import com.veggofresh.notification.entity.NotificationType;
 import com.veggofresh.notification.service.NotificationService;
 import com.veggofresh.payment.client.RazorpayClient;
 import com.veggofresh.payment.entity.PaymentOrder;
+import com.veggofresh.payment.entity.PaymentOrderLine;
 import com.veggofresh.payment.entity.PaymentOrderStatus;
 import com.veggofresh.payment.entity.PaymentWebhookEvent;
+import com.veggofresh.payment.repository.PaymentOrderLineRepository;
 import com.veggofresh.payment.repository.PaymentOrderRepository;
 import com.veggofresh.payment.repository.PaymentWebhookEventRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Razorpay webhook handler. Responsibilities:
@@ -31,14 +35,40 @@ import java.util.Optional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PaymentWebhookServiceImpl implements PaymentWebhookService {
 
     private final RazorpayClient razorpayClient;
     private final PaymentWebhookEventRepository webhookEventRepository;
     private final PaymentOrderRepository paymentOrderRepository;
+    private final PaymentOrderLineRepository paymentOrderLineRepository;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
+
+    /**
+     * Optional: a failed payment has to reach the order module to cancel the
+     * orders it was covering. Supplied by the customer module, so it is injected
+     * leniently and checked for null at the call site -- a payment failure must
+     * still be recorded even if that wiring is ever missing.
+     */
+    private final PaymentFailureHandler paymentFailureHandler;
+
+    public PaymentWebhookServiceImpl(
+            RazorpayClient razorpayClient,
+            PaymentWebhookEventRepository webhookEventRepository,
+            PaymentOrderRepository paymentOrderRepository,
+            PaymentOrderLineRepository paymentOrderLineRepository,
+            ObjectMapper objectMapper,
+            NotificationService notificationService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            PaymentFailureHandler paymentFailureHandler) {
+        this.razorpayClient = razorpayClient;
+        this.webhookEventRepository = webhookEventRepository;
+        this.paymentOrderRepository = paymentOrderRepository;
+        this.paymentOrderLineRepository = paymentOrderLineRepository;
+        this.objectMapper = objectMapper;
+        this.notificationService = notificationService;
+        this.paymentFailureHandler = paymentFailureHandler;
+    }
 
     @Override
     @Transactional
@@ -149,10 +179,55 @@ public class PaymentWebhookServiceImpl implements PaymentWebhookService {
                             "Payment failed", "Your payment could not be completed — please try again",
                             "{\"paymentOrderId\":\"" + po.getId() + "\"}");
                     log.warn("PaymentOrder {} marked FAILED via webhook", po.getId());
+
+                    // The payment is dead, so every order this batch was covering
+                    // has to go with it. Marking only the PaymentOrder FAILED left
+                    // the N orders in PLACED -- a state a vendor can accept and
+                    // delivery can complete -- so settlements were paid out for
+                    // orders nobody had paid for, while the customer was told the
+                    // payment had failed. Checkout fans one hold out over N orders,
+                    // so this is N orders per failure, not one.
+                    reconcileOrdersAfterFailure(po);
                 }
             });
         } catch (Exception e) {
             log.error("Error handling payment.failed webhook: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Tell the order side that this payment is dead, so it can cancel the orders
+     * that can no longer be paid for.
+     *
+     * <p>Guarded in both directions. The handler itself is optional (this
+     * callback is reached from a webhook thread and a failure to reach the order
+     * module must not stop the payment state being recorded), and a throw from it
+     * is caught and logged rather than allowed to escape into the webhook
+     * dispatcher, which would discard the whole event.
+     */
+    private void reconcileOrdersAfterFailure(PaymentOrder paymentOrder) {
+        if (paymentOrder.isTopup()) {
+            log.info("Payment {} is a wallet top-up with no orders behind it -- nothing to reconcile",
+                    paymentOrder.getId());
+            return;
+        }
+        if (paymentFailureHandler == null) {
+            log.error("No PaymentFailureHandler bean is wired -- payment {} is recorded FAILED but the orders it "
+                    + "was covering stay in PLACED, so they can still be accepted, delivered and settled. "
+                    + "This needs manual reconciliation.", paymentOrder.getId());
+            return;
+        }
+
+        List<UUID> orderIds = paymentOrderLineRepository.findByPaymentOrderId(paymentOrder.getId()).stream()
+                .map(PaymentOrderLine::getOrderId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        try {
+            paymentFailureHandler.onPaymentFailed(paymentOrder.getId(), paymentOrder.getUserId(), orderIds);
+        } catch (Exception e) {
+            log.error("Order-side reconciliation failed for payment {}: {}", paymentOrder.getId(), e.getMessage(), e);
         }
     }
 }

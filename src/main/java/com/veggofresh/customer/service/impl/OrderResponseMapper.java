@@ -4,6 +4,7 @@ import com.veggofresh.customer.dto.response.OrderItemResponseDto;
 import com.veggofresh.customer.dto.response.OrderResponseDto;
 import com.veggofresh.customer.entity.CustomerProfile;
 import com.veggofresh.customer.entity.Order;
+import com.veggofresh.customer.entity.OrderItem;
 import com.veggofresh.customer.entity.OrderStatus;
 import com.veggofresh.customer.repository.CustomerProfileRepository;
 import com.veggofresh.admin.dto.response.ProductResponseDto;
@@ -101,6 +102,7 @@ public class OrderResponseMapper {
                 .id(order.getId())
                 .userId(order.getUserId())
                 .orderNumber(order.getOrderNumber())
+                .sourceCartId(order.getSourceCartId())
                 .status(order.getStatus().name())
                 .totalAmount(order.getTotalAmount())
                 .deliveryFee(order.getDeliveryFee())
@@ -112,8 +114,12 @@ public class OrderResponseMapper {
                 .longitude(order.getLongitude())
                 .scheduledDate(order.getScheduledDate() != null ? order.getScheduledDate().toString() : null)
                 .deliveryTimeSlot(order.getDeliveryTimeSlot())
-                .paymentMethod(order.getPaymentMethodId() != null ? "Credit Card" : "COD")
-                .itemCount(order.getItems().size())
+                .paymentMethod(displayPaymentMethod(order))
+                // Sum of QUANTITIES, not the number of line items. The cart
+                // screen, the checkout summary and the cart badge all report
+                // quantities, so an order showing 1 for "2kg apples + 1kg rice"
+                // disagreed with every other number the customer had already seen.
+                .itemCount(totalItemQuantity(order))
                 .itemThumbnails(itemThumbnails)
                 .estimatedDeliveryWindow(order.getEstimatedDeliveryWindow())
                 .canTrack(order.getStatus() == OrderStatus.OUT_FOR_DELIVERY)
@@ -133,6 +139,45 @@ public class OrderResponseMapper {
                 .deliveryAgentName(order.getDeliveryAgentName())
                 .deliveryAgentPhone(order.getDeliveryAgentPhone())
                 .build();
+    }
+
+    /**
+     * Total number of physical units on the order, not the number of rows.
+     * A missing or nonsensical quantity counts as 1 so an order can never
+     * report an item count of zero while still listing items.
+     */
+    private int totalItemQuantity(Order order) {
+        if (order == null || order.getItems() == null) {
+            return 0;
+        }
+        int total = 0;
+        for (OrderItem item : order.getItems()) {
+            // Quantity is a primitive int, so no null check is possible; a
+            // non-positive value would make the order claim fewer items than it
+            // lists, so it counts as one.
+            total += item.getQuantity() <= 0 ? 1 : item.getQuantity();
+        }
+        return total;
+    }
+
+    /**
+     * Renders the stored payment method for display.
+     *
+     * <p>This used to be {@code paymentMethodId != null ? "Credit Card" : "COD"},
+     * which discarded whatever the customer actually chose. The field holds a
+     * free-text label ({@code COD}, {@code UPI}, {@code ONLINE}, {@code WALLET}),
+     * so every prepaid order was shown as a card payment, and UPI and wallet
+     * orders could not be told apart during support or reconciliation.
+     *
+     * <p>Falls back to COD when nothing was stored, matching what checkout does
+     * for an order placed without a method.
+     */
+    private String displayPaymentMethod(Order order) {
+        String stored = order.getPaymentMethodId();
+        if (stored == null || stored.isBlank()) {
+            return "COD";
+        }
+        return stored.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private ProductResponseDto safeGetProduct(java.util.UUID productId) {

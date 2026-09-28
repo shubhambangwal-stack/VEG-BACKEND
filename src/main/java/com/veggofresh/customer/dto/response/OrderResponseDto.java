@@ -18,6 +18,16 @@ public class OrderResponseDto {
     private UUID id;
     private UUID userId;
     private String orderNumber;
+    /**
+     * The cart this order was built from, when it came from a cart. One checkout
+     * call produces N orders, one per cart, and the client labels each cart
+     * "Cart 1", "Cart 2", ...; without this the response gives the customer N
+     * orders and no way to tell which cart each one came from, so "Cart 2 was
+     * ordered" cannot be reconciled with the order that actually happened.
+     *
+     * <p>Null for orders not created from a cart.
+     */
+    private UUID sourceCartId;
     private String status;
     private BigDecimal totalAmount;
     private BigDecimal deliveryFee;

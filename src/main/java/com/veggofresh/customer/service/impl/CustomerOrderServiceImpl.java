@@ -224,6 +224,47 @@ public class CustomerOrderServiceImpl implements CustomerOrderService {
         paymentService.onOrderCancelled(saved.getId());
     }
 
+    /**
+     * Reconciles the N orders covered by a payment that failed.
+     *
+     * <p>Without this, a failed payment left every one of its orders in PLACED.
+     * That is not a cosmetic inconsistency: PLACED is a state a vendor can
+     * accept and delivery can complete, so settlements were paid out to vendors,
+     * drivers and the platform for orders that were never paid for -- while the
+     * customer was told the payment had failed.
+     *
+     * <p>Each order is cancelled through
+     * {@link #cancelOrderSystemInitiated(UUID, String)}, which is idempotent and
+     * notifies the customer. It also calls {@code paymentService.onOrderCancelled()},
+     * which correctly voids the line: a failed payment was never captured, so
+     * there is nothing to refund.
+     */
+    @Override
+    @Transactional
+    public void onPaymentFailed(UUID paymentOrderId, UUID userId, List<UUID> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            // A wallet top-up has no orders behind it.
+            log.info("Payment {} failed with no associated orders -- payment side already reconciled",
+                    paymentOrderId);
+            return;
+        }
+
+        log.warn("Payment {} failed; cancelling {} order(s) it was covering", paymentOrderId, orderIds.size());
+
+        for (UUID orderId : orderIds) {
+            try {
+                cancelOrderSystemInitiated(orderId, "payment could not be completed");
+            } catch (Exception e) {
+                // One order must not stop the rest: leaving the others in PLACED
+                // is the exact bug this method exists to close. The payment side
+                // is already FAILED and cannot be retried, so the failure is
+                // logged loudly for manual reconciliation.
+                log.error("Failed to cancel order {} after payment {} failed: {}", orderId, paymentOrderId,
+                        e.getMessage(), e);
+            }
+        }
+    }
+
     private String orderData(Order order) {
         return "{\"orderId\":\"" + order.getId() + "\",\"orderNumber\":\"" + order.getOrderNumber() + "\"}";
     }
