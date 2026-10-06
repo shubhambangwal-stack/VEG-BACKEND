@@ -100,6 +100,15 @@ public class WishlistServiceImpl implements WishlistService {
             throw new BusinessException("PRODUCT_NOT_FOUND", "Product not found in catalog", HttpStatus.BAD_REQUEST);
         }
 
+        // Serialise concurrent adds for the SAME customer + product (e.g. a double tap on the
+        // heart icon). The second request waits here until the first one commits, then its
+        // check below sees the committed row and it simply does nothing -- instead of both
+        // requests passing the check and the second INSERT failing with a duplicate-key 500.
+        wishlistRepository.lockForAdd(userId + ":" + productId);
+
+        // The repository hides soft-deleted rows (@Where deleted_at IS NULL), so a product the
+        // customer removed earlier is correctly treated as "not in wishlist" and is added again.
+        // This is safe because V163 made the uniqueness rule apply to ACTIVE rows only.
         boolean alreadyInWishlist = wishlistRepository.findByUserIdAndProductId(userId, productId).isPresent();
         if (!alreadyInWishlist) {
             Wishlist wishlist = new Wishlist();
