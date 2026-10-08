@@ -38,7 +38,7 @@ import java.util.UUID;
 @RequestMapping("/api/admin/customers")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
-public class AdminCustomerController {
+public class  AdminCustomerController {
 
     private final AdminCustomerService adminCustomerService;
 
